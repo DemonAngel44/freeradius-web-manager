@@ -15,8 +15,11 @@ class Config:
     # FreeRADIUS users file path
     USERS_FILE = os.environ.get('USERS_FILE', '/etc/raddb/mods-config/files/authorize')
 
-    # Only users with this prefix can log in as admin
-    ADMIN_GROUP_PREFIX = os.environ.get('ADMIN_GROUP_PREFIX', 'ADM-')
+    # Only users with this prefix can log in as admin (empty = any authenticated user)
+    ADMIN_GROUP_PREFIX = os.environ.get('ADMIN_GROUP_PREFIX', '')
+
+    # Setup marker file - if exists, setup is complete
+    SETUP_COMPLETE_FILE = os.environ.get('SETUP_COMPLETE_FILE', '/data/.setup_complete')
 
     # Docker container name for FreeRADIUS (for reload command)
     FREERADIUS_CONTAINER = os.environ.get('FREERADIUS_CONTAINER', 'freeradius')

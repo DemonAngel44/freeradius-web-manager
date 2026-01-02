@@ -4,7 +4,10 @@ Flask routes for web views and API endpoints.
 
 import subprocess
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify, current_app
-from app.auth import authenticate_radius, is_admin_user, login_required, get_current_user
+from app.auth import (
+    authenticate_radius, is_admin_user, login_required, get_current_user,
+    is_setup_complete, mark_setup_complete, setup_required
+)
 from app.radius_file import RadiusFileManager, RadiusUser
 
 main_bp = Blueprint('main', __name__)
@@ -18,7 +21,61 @@ def get_file_manager():
 
 # ============== Web Views ==============
 
+@main_bp.route('/setup', methods=['GET', 'POST'])
+def setup():
+    """First-run setup page."""
+    # If setup is already complete, redirect to login
+    if is_setup_complete():
+        return redirect(url_for('main.login'))
+
+    manager = get_file_manager()
+
+    if request.method == 'POST':
+        username = request.form.get('username', '').strip()
+        password = request.form.get('password', '')
+        confirm_password = request.form.get('confirm_password', '')
+
+        errors = []
+
+        if not username:
+            errors.append('Username is required')
+        if not password:
+            errors.append('Password is required')
+        if password != confirm_password:
+            errors.append('Passwords do not match')
+        if len(password) < 8:
+            errors.append('Password must be at least 8 characters')
+
+        if errors:
+            for error in errors:
+                flash(error, 'error')
+            return render_template('setup.html')
+
+        # Create the users file if it doesn't exist
+        manager.create_file_if_missing()
+
+        # Create the first admin user
+        user = RadiusUser(
+            username=username,
+            password=password,
+            comment="Initial admin user",
+            disabled=False
+        )
+
+        if manager.add_user(user, "setup"):
+            # Mark setup as complete
+            mark_setup_complete()
+            flash(f'Admin user "{username}" created successfully. You can now log in.', 'success')
+            current_app.logger.info(f"Setup complete. Admin user created: {username}")
+            return redirect(url_for('main.login'))
+        else:
+            flash(f'User "{username}" already exists', 'error')
+
+    return render_template('setup.html')
+
+
 @main_bp.route('/')
+@setup_required
 @login_required
 def index():
     """Main dashboard - redirect to users list."""
@@ -26,6 +83,7 @@ def index():
 
 
 @main_bp.route('/login', methods=['GET', 'POST'])
+@setup_required
 def login():
     """Login page."""
     if request.method == 'POST':
@@ -62,6 +120,7 @@ def logout():
 
 
 @main_bp.route('/users')
+@setup_required
 @login_required
 def users():
     """Users list page."""
@@ -71,6 +130,7 @@ def users():
 
 
 @main_bp.route('/users/new', methods=['GET', 'POST'])
+@setup_required
 @login_required
 def new_user():
     """Create new user form."""
@@ -101,6 +161,7 @@ def new_user():
 
 
 @main_bp.route('/users/<username>/edit', methods=['GET', 'POST'])
+@setup_required
 @login_required
 def edit_user(username):
     """Edit user form."""

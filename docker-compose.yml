@@ -9,26 +9,27 @@ services:
       - "5000:5000"
     environment:
       - SECRET_KEY=${SECRET_KEY:-change-this-secret-key}
-      - RADIUS_SERVER=${RADIUS_SERVER:-10.11.101.221}
+      - RADIUS_SERVER=${RADIUS_SERVER:-localhost}
       - RADIUS_PORT=${RADIUS_PORT:-1812}
-      - RADIUS_SECRET=${RADIUS_SECRET:-VPNRadius2024!}
+      - RADIUS_SECRET=${RADIUS_SECRET}
       - USERS_FILE=/data/authorize
-      - ADMIN_GROUP_PREFIX=${ADMIN_GROUP_PREFIX:-ADM-}
+      - ADMIN_GROUP_PREFIX=${ADMIN_GROUP_PREFIX:-}
       - FREERADIUS_CONTAINER=${FREERADIUS_CONTAINER:-freeradius}
+      - SETUP_COMPLETE_FILE=/data/.setup_complete
     volumes:
-      # Mount FreeRADIUS users file
-      - radius_users:/data:rw
-      # Mount docker socket for reload command
+      # Mount FreeRADIUS config directory (adjust path as needed)
+      - radius_config:/data:rw
+      # Mount docker socket for reload command (optional)
       - /var/run/docker.sock:/var/run/docker.sock:ro
     networks:
       - radius-net
 
 volumes:
-  radius_users:
+  radius_config:
     external: true
     name: freeradius_config  # Adjust to match your FreeRADIUS volume
 
 networks:
   radius-net:
     external: true
-    name: nginx-proxy-manager_default  # Adjust to match your network
+    name: freeradius_network  # Adjust to match your network

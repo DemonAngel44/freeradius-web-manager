@@ -88,8 +88,14 @@ def authenticate_radius(username: str, password: str) -> bool:
 
 
 def is_admin_user(username: str) -> bool:
-    """Check if the username is an admin user (has ADM- prefix by default)."""
-    prefix = current_app.config.get('ADMIN_GROUP_PREFIX', 'ADM-')
+    """Check if the username is an admin user.
+
+    If ADMIN_GROUP_PREFIX is set, user must have that prefix.
+    If empty, any authenticated user is considered admin.
+    """
+    prefix = current_app.config.get('ADMIN_GROUP_PREFIX', '')
+    if not prefix:
+        return True  # Any authenticated user is admin
     return username.startswith(prefix)
 
 
@@ -108,3 +114,30 @@ def login_required(f):
 def get_current_user() -> str:
     """Get the currently logged in username."""
     return session.get('username', 'anonymous')
+
+
+def is_setup_complete() -> bool:
+    """Check if initial setup has been completed."""
+    setup_file = current_app.config.get('SETUP_COMPLETE_FILE', '/data/.setup_complete')
+    return os.path.exists(setup_file)
+
+
+def mark_setup_complete():
+    """Mark setup as complete by creating the marker file."""
+    setup_file = current_app.config.get('SETUP_COMPLETE_FILE', '/data/.setup_complete')
+    setup_dir = os.path.dirname(setup_file)
+    if setup_dir and not os.path.exists(setup_dir):
+        os.makedirs(setup_dir, exist_ok=True)
+    with open(setup_file, 'w') as f:
+        from datetime import datetime
+        f.write(f"Setup completed: {datetime.now().isoformat()}\n")
+
+
+def setup_required(f):
+    """Decorator to redirect to setup if not complete."""
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if not is_setup_complete():
+            return redirect(url_for('main.setup'))
+        return f(*args, **kwargs)
+    return decorated_function

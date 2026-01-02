@@ -4,9 +4,10 @@ A lightweight web interface for managing FreeRADIUS users via flat files. No dat
 
 ## Features
 
-- **RADIUS Authentication** - Admin login via existing RADIUS accounts
+- **First-Run Setup** - Create your first admin account through the web interface
+- **RADIUS Authentication** - Admin login via RADIUS authentication
 - **User Management** - Add, edit, enable/disable, delete users
-- **Flat File Storage** - Works directly with FreeRADIUS users file (no database migration)
+- **Flat File Storage** - Works directly with FreeRADIUS users file (no database)
 - **Lightweight** - Single container, minimal dependencies (~50MB)
 - **Secure** - HTTPS ready, RADIUS-authenticated access
 
@@ -16,28 +17,40 @@ A lightweight web interface for managing FreeRADIUS users via flat files. No dat
 
 ```bash
 # Clone the repository
-git clone https://github.com/yourusername/freeradius-web-manager.git
+git clone https://github.com/DemonAngel44/freeradius-web-manager.git
 cd freeradius-web-manager
 
 # Configure environment
 cp .env.example .env
-# Edit .env with your settings
+# Edit .env with your RADIUS server settings
 
 # Start the container
 docker-compose up -d
 ```
 
-### Environment Variables
+### First-Run Setup
+
+On first access, you'll be prompted to create an admin account:
+
+1. Navigate to `http://your-server:5000`
+2. Enter a username and password for your admin account
+3. This account is created in the FreeRADIUS users file
+4. Log in with the credentials you just created
+
+After setup, all authentication goes through RADIUS.
+
+## Environment Variables
 
 | Variable | Description | Default |
 |----------|-------------|---------|
-| `SECRET_KEY` | Flask secret key for sessions | (required) |
+| `SECRET_KEY` | Flask secret key for sessions | (required for production) |
 | `RADIUS_SERVER` | FreeRADIUS server IP | `localhost` |
 | `RADIUS_PORT` | RADIUS authentication port | `1812` |
 | `RADIUS_SECRET` | RADIUS shared secret | (required) |
 | `USERS_FILE` | Path to FreeRADIUS users file | `/etc/raddb/mods-config/files/authorize` |
-| `ADMIN_GROUP_PREFIX` | Username prefix for admin access | `ADM-` |
+| `ADMIN_GROUP_PREFIX` | Username prefix for admin access (optional) | (empty = any user) |
 | `FREERADIUS_CONTAINER` | Docker container name for reload | `freeradius` |
+| `SETUP_COMPLETE_FILE` | Path to setup marker file | `/data/.setup_complete` |
 
 ## Configuration
 
@@ -52,11 +65,29 @@ username Cleartext-Password := "password"
     Service-Type = Framed-User
 ```
 
-### Admin Access
+### Admin Access Restriction (Optional)
 
-Only users with usernames starting with `ADMIN_GROUP_PREFIX` (default: `ADM-`) can log into the management interface. These users authenticate against the RADIUS server itself.
+By default, any user who can authenticate via RADIUS can access the management interface. To restrict access to specific users, set `ADMIN_GROUP_PREFIX`:
+
+```bash
+# Only users starting with "admin-" can log in
+ADMIN_GROUP_PREFIX=admin-
+```
+
+### Docker Volume Setup
+
+The container needs access to your FreeRADIUS configuration:
+
+```yaml
+volumes:
+  radius_config:
+    external: true
+    name: your_freeradius_config_volume
+```
 
 ## API Endpoints
+
+All API endpoints require authentication.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -67,6 +98,7 @@ Only users with usernames starting with `ADMIN_GROUP_PREFIX` (default: `ADM-`) c
 | DELETE | `/api/users/<username>` | Delete user |
 | POST | `/api/users/<username>/toggle` | Enable/disable user |
 | POST | `/api/reload` | Reload FreeRADIUS config |
+| GET | `/api/health` | Health check |
 
 ## Development
 
@@ -103,10 +135,24 @@ freeradius-web-manager/
 
 ## Security Considerations
 
-- Always run behind HTTPS (use nginx-proxy-manager or similar)
+- Always run behind HTTPS in production (use nginx-proxy-manager or similar)
+- Use a strong `SECRET_KEY` in production
 - RADIUS shared secret should be strong and kept secure
-- Only ADM-* users can access the management interface
+- Consider using `ADMIN_GROUP_PREFIX` to limit admin access
 - All changes are logged with timestamp and admin username
+- The first-run setup can only be used once
+
+## Resetting Setup
+
+To reset the first-run setup:
+
+```bash
+# Remove the setup marker file
+docker exec freeradius-web-manager rm /data/.setup_complete
+
+# Optionally clear all users
+docker exec freeradius-web-manager rm /data/authorize
+```
 
 ## License
 
