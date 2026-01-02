@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block title %}Users - FreeRADIUS Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>VPN Users</h1>
+    <div class="header-actions">
+        <button class="btn btn-secondary" onclick="reloadRadius()">
+            Reload RADIUS
+        </button>
+        <a href="{{ url_for('main.new_user') }}" class="btn btn-primary">
+            + Add User
+        </a>
+    </div>
+</div>
+
+<div class="stats-bar">
+    <div class="stat">
+        <span class="stat-value">{{ users|length }}</span>
+        <span class="stat-label">Total Users</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value stat-enabled">{{ users|selectattr('disabled', 'false')|list|length }}</span>
+        <span class="stat-label">Enabled</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value stat-disabled">{{ users|selectattr('disabled', 'true')|list|length }}</span>
+        <span class="stat-label">Disabled</span>
+    </div>
+</div>
+
+<div class="search-bar">
+    <input type="text" id="searchInput" placeholder="Search users..." onkeyup="filterUsers()">
+</div>
+
+<table class="users-table" id="usersTable">
+    <thead>
+        <tr>
+            <th>Username</th>
+            <th>Comment</th>
+            <th>Status</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for user in users %}
+        <tr class="{% if user.disabled %}row-disabled{% endif %}" data-username="{{ user.username|lower }}">
+            <td class="username">{{ user.username }}</td>
+            <td class="comment">{{ user.comment or '-' }}</td>
+            <td>
+                <span class="status-badge {% if user.disabled %}status-disabled{% else %}status-enabled{% endif %}">
+                    {{ 'Disabled' if user.disabled else 'Enabled' }}
+                </span>
+            </td>
+            <td class="actions">
+                <button class="btn btn-sm btn-toggle"
+                        onclick="toggleUser('{{ user.username }}')"
+                        title="{{ 'Enable' if user.disabled else 'Disable' }}">
+                    {{ 'Enable' if user.disabled else 'Disable' }}
+                </button>
+                {% if not user.disabled %}
+                <a href="{{ url_for('main.edit_user', username=user.username) }}"
+                   class="btn btn-sm btn-edit" title="Edit">
+                    Edit
+                </a>
+                {% endif %}
+                <button class="btn btn-sm btn-delete"
+                        onclick="deleteUser('{{ user.username }}')"
+                        title="Delete">
+                    Delete
+                </button>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="4" class="empty-state">No users found</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function filterUsers() {
+    const input = document.getElementById('searchInput');
+    const filter = input.value.toLowerCase();
+    const table = document.getElementById('usersTable');
+    const rows = table.getElementsByTagName('tr');
+
+    for (let i = 1; i < rows.length; i++) {
+        const username = rows[i].getAttribute('data-username') || '';
+        const comment = rows[i].querySelector('.comment')?.textContent.toLowerCase() || '';
+
+        if (username.includes(filter) || comment.includes(filter)) {
+            rows[i].style.display = '';
+        } else {
+            rows[i].style.display = 'none';
+        }
+    }
+}
+
+async function toggleUser(username) {
+    if (!confirm(`Toggle status for user "${username}"?`)) return;
+
+    try {
+        const response = await fetch(`/api/users/${username}/toggle`, {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to toggle user');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function deleteUser(username) {
+    if (!confirm(`Are you sure you want to delete user "${username}"? This cannot be undone.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/users/${username}`, {
+            method: 'DELETE'
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert(data.error || 'Failed to delete user');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+
+async function reloadRadius() {
+    if (!confirm('Reload FreeRADIUS configuration?')) return;
+
+    try {
+        const response = await fetch('/api/reload', {
+            method: 'POST'
+        });
+        const data = await response.json();
+
+        if (response.ok) {
+            alert('FreeRADIUS configuration reloaded successfully');
+        } else {
+            alert(data.error || 'Failed to reload FreeRADIUS');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+</script>
+{% endblock %}

@@ -1,0 +1,25 @@
+import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
+
+class Config:
+    SECRET_KEY = os.environ.get('SECRET_KEY') or 'dev-secret-key-change-in-production'
+
+    # RADIUS server settings
+    RADIUS_SERVER = os.environ.get('RADIUS_SERVER', 'localhost')
+    RADIUS_PORT = int(os.environ.get('RADIUS_PORT', 1812))
+    RADIUS_SECRET = os.environ.get('RADIUS_SECRET', '')
+
+    # FreeRADIUS users file path
+    USERS_FILE = os.environ.get('USERS_FILE', '/etc/raddb/mods-config/files/authorize')
+
+    # Only users with this prefix can log in as admin
+    ADMIN_GROUP_PREFIX = os.environ.get('ADMIN_GROUP_PREFIX', 'ADM-')
+
+    # Docker container name for FreeRADIUS (for reload command)
+    FREERADIUS_CONTAINER = os.environ.get('FREERADIUS_CONTAINER', 'freeradius')
+
+    # Session settings
+    PERMANENT_SESSION_LIFETIME = 3600  # 1 hour
