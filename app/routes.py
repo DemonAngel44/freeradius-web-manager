@@ -313,28 +313,26 @@ def docker_api_request(method, endpoint, body=None):
         raise FileNotFoundError("Docker socket not available")
 
     sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.settimeout(5.0)  # 5 second timeout
     sock.connect(socket_path)
 
-    # Build HTTP request
+    # Build HTTP request - use Connection: close to avoid chunked issues
     body_bytes = json.dumps(body).encode() if body else b''
-    request_line = f"{method} {endpoint} HTTP/1.1\r\n"
-    headers = f"Host: localhost\r\nContent-Type: application/json\r\nContent-Length: {len(body_bytes)}\r\n\r\n"
+    request_line = f"{method} {endpoint} HTTP/1.0\r\n"  # HTTP/1.0 forces Connection: close
+    headers = f"Host: localhost\r\nContent-Type: application/json\r\nContent-Length: {len(body_bytes)}\r\nConnection: close\r\n\r\n"
 
     sock.sendall(request_line.encode() + headers.encode() + body_bytes)
 
-    # Read response
+    # Read response with timeout
     response = b''
-    while True:
-        chunk = sock.recv(4096)
-        if not chunk:
-            break
-        response += chunk
-        if b'\r\n\r\n' in response:
-            # Check if we have content-length or if response is complete
-            header_end = response.find(b'\r\n\r\n')
-            headers_part = response[:header_end].decode()
-            if 'Content-Length: 0' in headers_part or method == 'POST':
+    try:
+        while True:
+            chunk = sock.recv(4096)
+            if not chunk:
                 break
+            response += chunk
+    except socket.timeout:
+        pass  # Timeout is expected when server closes connection
 
     sock.close()
 
