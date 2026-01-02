@@ -5,6 +5,16 @@
 {% block content %}
 <div class="page-header">
     <h1>VPN Activity</h1>
+    <div class="header-actions">
+        <button class="btn btn-secondary" onclick="refreshStatus()">
+            Refresh Status
+        </button>
+    </div>
+</div>
+
+<div class="server-status" id="serverStatus">
+    <span class="status-indicator loading"></span>
+    <span>Checking server status...</span>
 </div>
 
 <div class="filter-bar">
@@ -21,13 +31,21 @@
             <option value="200" {% if request.args.get('limit', '100') == '200' %}selected{% endif %}>200 records</option>
             <option value="500" {% if request.args.get('limit', '100') == '500' %}selected{% endif %}>500 records</option>
         </select>
-        {% if user_filter %}
-        <a href="{{ url_for('main.activity') }}" class="btn btn-secondary">Clear Filter</a>
+        <label class="checkbox-label">
+            <input type="checkbox" name="active" value="1" {% if show_active %}checked{% endif %} onchange="this.form.submit()">
+            Active Only
+        </label>
+        {% if user_filter or show_active %}
+        <a href="{{ url_for('main.activity') }}" class="btn btn-secondary">Clear Filters</a>
         {% endif %}
     </form>
 </div>
 
 <div class="stats-bar">
+    <div class="stat stat-clickable {% if show_active %}stat-active{% endif %}" onclick="window.location='{{ url_for('main.activity', active='1') }}'">
+        <span class="stat-value stat-warning">{{ active_count }}</span>
+        <span class="stat-label">Active Now</span>
+    </div>
     <div class="stat">
         <span class="stat-value">{{ records|length }}</span>
         <span class="stat-label">Records</span>
@@ -42,15 +60,33 @@
     </div>
 </div>
 
+{% if show_active and active_sessions %}
+<div class="active-sessions-panel">
+    <h3>Currently Connected Users</h3>
+    <div class="active-users-grid">
+        {% for session in active_sessions %}
+        <div class="active-user-card">
+            <div class="active-user-name">{{ session.get('User-Name', 'Unknown') }}</div>
+            <div class="active-user-details">
+                <span>IP: {{ session.get('Framed-IP-Address', '-') }}</span>
+                <span>From: {{ session.get('Calling-Station-Id', '-') }}</span>
+                <span>Since: {{ session.get('_timestamp_str', '-') }}</span>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %}
+
 <table class="users-table activity-table">
     <thead>
         <tr>
             <th>Time</th>
             <th>User</th>
             <th>Status</th>
-            <th>IP Address</th>
-            <th>Calling Station</th>
-            <th>NAS</th>
+            <th>VPN IP</th>
+            <th>Source IP</th>
+            <th>Gateway</th>
             <th>Duration</th>
             <th>Data</th>
         </tr>
@@ -68,7 +104,7 @@
             </td>
             <td>{{ record.get('Framed-IP-Address', '-') }}</td>
             <td>{{ record.get('Calling-Station-Id', '-') }}</td>
-            <td class="nas">{{ record.get('NAS-Identifier', record.get('NAS-IP-Address', '-'))|truncate(30) }}</td>
+            <td class="gateway">{{ record.get('NAS-Identifier', record.get('NAS-IP-Address', '-'))|truncate(25) }}</td>
             <td>
                 {% if record.get('Acct-Session-Time') %}
                     {% set secs = record.get('Acct-Session-Time')|int %}
@@ -106,4 +142,42 @@
         {% endfor %}
     </tbody>
 </table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function refreshStatus() {
+    const statusEl = document.getElementById('serverStatus');
+    statusEl.innerHTML = '<span class="status-indicator loading"></span><span>Checking...</span>';
+
+    try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+
+        if (data.running) {
+            statusEl.innerHTML = `
+                <span class="status-indicator online"></span>
+                <span>FreeRADIUS: <strong>Running</strong></span>
+                <span class="status-uptime">Started: ${new Date(data.started_at).toLocaleString()}</span>
+            `;
+        } else {
+            statusEl.innerHTML = `
+                <span class="status-indicator offline"></span>
+                <span>FreeRADIUS: <strong>${data.status || 'Offline'}</strong></span>
+            `;
+        }
+    } catch (err) {
+        statusEl.innerHTML = `
+            <span class="status-indicator offline"></span>
+            <span>Status: Unknown (${err.message})</span>
+        `;
+    }
+}
+
+// Check status on page load
+refreshStatus();
+
+// Auto-refresh every 30 seconds
+setInterval(refreshStatus, 30000);
+</script>
 {% endblock %}

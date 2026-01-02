@@ -4,9 +4,10 @@ Flask routes for web views and API endpoints.
 
 import os
 import re
+import json
+import socket
 from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify, current_app
-import requests_unixsocket
 from app.auth import (
     authenticate_radius, is_admin_user, login_required, get_current_user,
     is_setup_complete, mark_setup_complete, setup_required
@@ -305,16 +306,49 @@ def api_toggle_user(username):
     return jsonify({'error': 'User not found'}), 404
 
 
-def docker_api_request(method, endpoint, **kwargs):
-    """Make a request to Docker API via Unix socket."""
+def docker_api_request(method, endpoint, body=None):
+    """Make a request to Docker API via Unix socket using raw HTTP."""
     socket_path = '/var/run/docker.sock'
     if not os.path.exists(socket_path):
         raise FileNotFoundError("Docker socket not available")
 
-    session = requests_unixsocket.Session()
-    url = f"http+unix://%2Fvar%2Frun%2Fdocker.sock{endpoint}"
-    response = session.request(method, url, **kwargs)
-    return response
+    sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    sock.connect(socket_path)
+
+    # Build HTTP request
+    body_bytes = json.dumps(body).encode() if body else b''
+    request_line = f"{method} {endpoint} HTTP/1.1\r\n"
+    headers = f"Host: localhost\r\nContent-Type: application/json\r\nContent-Length: {len(body_bytes)}\r\n\r\n"
+
+    sock.sendall(request_line.encode() + headers.encode() + body_bytes)
+
+    # Read response
+    response = b''
+    while True:
+        chunk = sock.recv(4096)
+        if not chunk:
+            break
+        response += chunk
+        if b'\r\n\r\n' in response:
+            # Check if we have content-length or if response is complete
+            header_end = response.find(b'\r\n\r\n')
+            headers_part = response[:header_end].decode()
+            if 'Content-Length: 0' in headers_part or method == 'POST':
+                break
+
+    sock.close()
+
+    # Parse response
+    response_str = response.decode('utf-8', errors='ignore')
+    lines = response_str.split('\r\n')
+    status_line = lines[0] if lines else ''
+    status_code = int(status_line.split()[1]) if len(status_line.split()) > 1 else 0
+
+    # Find body
+    body_start = response_str.find('\r\n\r\n')
+    body_content = response_str[body_start + 4:] if body_start != -1 else ''
+
+    return {'status_code': status_code, 'body': body_content}
 
 
 @api_bp.route('/reload', methods=['POST'])
@@ -328,35 +362,73 @@ def api_reload_radius():
         exec_create = docker_api_request(
             'POST',
             f'/containers/{container_name}/exec',
-            json={
+            body={
                 'Cmd': ['kill', '-HUP', '1'],
                 'AttachStdout': True,
                 'AttachStderr': True
             }
         )
 
-        if exec_create.status_code != 201:
-            return jsonify({'error': 'Failed to create exec instance', 'details': exec_create.text}), 500
+        if exec_create['status_code'] != 201:
+            return jsonify({'error': 'Failed to create exec instance', 'details': exec_create['body']}), 500
 
-        exec_id = exec_create.json()['Id']
+        # Parse exec ID from response
+        try:
+            exec_data = json.loads(exec_create['body'].strip().split('\n')[-1])
+            exec_id = exec_data.get('Id')
+        except:
+            return jsonify({'error': 'Failed to parse exec response'}), 500
 
         # Start the exec instance
         exec_start = docker_api_request(
             'POST',
             f'/exec/{exec_id}/start',
-            json={'Detach': False}
+            body={'Detach': True}
         )
 
-        if exec_start.status_code == 200:
+        if exec_start['status_code'] == 200 or exec_start['status_code'] == 204:
             current_app.logger.info(f"FreeRADIUS reloaded by {get_current_user()}")
             return jsonify({'message': 'FreeRADIUS configuration reloaded'})
         else:
-            return jsonify({'error': 'Failed to reload FreeRADIUS', 'details': exec_start.text}), 500
+            return jsonify({'error': 'Failed to reload FreeRADIUS', 'details': exec_start['body']}), 500
 
     except FileNotFoundError:
         return jsonify({'error': 'Docker socket not available'}), 500
     except Exception as e:
         current_app.logger.error(f"Reload error: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+
+@api_bp.route('/status', methods=['GET'])
+@login_required
+def api_server_status():
+    """Get FreeRADIUS server status."""
+    container_name = current_app.config['FREERADIUS_CONTAINER']
+
+    try:
+        # Get container info
+        response = docker_api_request('GET', f'/containers/{container_name}/json')
+
+        if response['status_code'] == 200:
+            try:
+                container_info = json.loads(response['body'].strip())
+                state = container_info.get('State', {})
+
+                return jsonify({
+                    'container': container_name,
+                    'status': state.get('Status', 'unknown'),
+                    'running': state.get('Running', False),
+                    'started_at': state.get('StartedAt', ''),
+                    'health': state.get('Health', {}).get('Status', 'unknown') if state.get('Health') else 'no healthcheck'
+                })
+            except:
+                return jsonify({'status': 'unknown', 'error': 'Failed to parse container info'})
+        else:
+            return jsonify({'status': 'not found', 'running': False})
+
+    except FileNotFoundError:
+        return jsonify({'error': 'Docker socket not available'}), 500
+    except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 
@@ -448,6 +520,26 @@ def get_activity_records(log_dir, limit=100):
 
 # ============== Activity Views ==============
 
+def get_active_sessions(records):
+    """Calculate active sessions from records (Start without matching Stop)."""
+    sessions = {}  # session_id -> record
+
+    # Process in chronological order (oldest first) to track state
+    for record in reversed(records):
+        session_id = record.get('Acct-Unique-Session-Id') or record.get('Acct-Session-Id')
+        status = record.get('Acct-Status-Type', '')
+
+        if not session_id:
+            continue
+
+        if status == 'Start':
+            sessions[session_id] = record
+        elif status == 'Stop' and session_id in sessions:
+            del sessions[session_id]
+
+    return list(sessions.values())
+
+
 @main_bp.route('/activity')
 @setup_required
 @login_required
@@ -456,17 +548,36 @@ def activity():
     log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
     limit = request.args.get('limit', 100, type=int)
     user_filter = request.args.get('user', '').strip()
+    show_active = request.args.get('active', '') == '1'
 
-    records = get_activity_records(log_dir, limit=limit * 2 if user_filter else limit)
+    # Get more records to calculate active sessions
+    all_records = get_activity_records(log_dir, limit=500)
+
+    # Calculate active sessions
+    active_sessions = get_active_sessions(all_records)
+
+    # Filter records for display
+    if show_active:
+        records = active_sessions
+    else:
+        records = all_records
 
     # Filter by user if specified
     if user_filter:
-        records = [r for r in records if user_filter.lower() in r.get('User-Name', '').lower()][:limit]
+        records = [r for r in records if user_filter.lower() in r.get('User-Name', '').lower()]
+
+    records = records[:limit]
 
     # Get unique users for filter dropdown
-    all_users = set(r.get('User-Name', '') for r in records if r.get('User-Name'))
+    all_users = set(r.get('User-Name', '') for r in all_records if r.get('User-Name'))
 
-    return render_template('activity.html', records=records, users=sorted(all_users), user_filter=user_filter)
+    return render_template('activity.html',
+                           records=records,
+                           users=sorted(all_users),
+                           user_filter=user_filter,
+                           active_count=len(active_sessions),
+                           active_sessions=active_sessions,
+                           show_active=show_active)
 
 
 @api_bp.route('/activity', methods=['GET'])
