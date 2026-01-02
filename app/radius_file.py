@@ -92,14 +92,35 @@ class RadiusFileManager:
                     current_comment = ""
                 continue
 
-            # Check for disabled user comment
-            disabled_match = re.match(r'^#\s*DISABLED:\s*(\S+)\s*-?\s*(.*)?$', line_stripped)
+            # Check for disabled user marker comment
+            # Format: # DISABLED: username [base64_password] - comment
+            disabled_match = re.match(r'^#\s*DISABLED:\s*(\S+)\s+\[([^\]]*)\]\s*-?\s*(.*)?$', line_stripped)
             if disabled_match:
                 username = disabled_match.group(1)
-                reason = disabled_match.group(2) or ""
+                import base64
+                try:
+                    password = base64.b64decode(disabled_match.group(2)).decode('utf-8')
+                except:
+                    password = ""
+                reason = disabled_match.group(3) or ""
                 users.append(RadiusUser(
                     username=username,
-                    password="",  # Password not stored for disabled users in comment form
+                    password=password,
+                    comment=reason.strip(),
+                    disabled=True,
+                    attributes={}
+                ))
+                current_comment = ""
+                continue
+
+            # Legacy disabled format (without password) - for backwards compatibility
+            legacy_disabled_match = re.match(r'^#\s*DISABLED:\s*(\S+)\s*-\s*(.*)$', line_stripped)
+            if legacy_disabled_match:
+                username = legacy_disabled_match.group(1)
+                reason = legacy_disabled_match.group(2) or ""
+                users.append(RadiusUser(
+                    username=username,
+                    password="",  # Password lost in legacy format
                     comment=reason.strip(),
                     disabled=True,
                     attributes={}
@@ -158,11 +179,14 @@ class RadiusFileManager:
 
     def _format_user_entry(self, user: RadiusUser) -> str:
         """Format a user entry for the users file."""
+        import base64
         lines = []
 
         if user.disabled:
+            # Store password as base64 to preserve it when disabled
+            pwd_encoded = base64.b64encode(user.password.encode('utf-8')).decode('ascii') if user.password else ""
             comment_part = f" - {user.comment}" if user.comment else ""
-            lines.append(f"# DISABLED: {user.username}{comment_part}")
+            lines.append(f"# DISABLED: {user.username} [{pwd_encoded}]{comment_part}")
         else:
             if user.comment:
                 lines.append(f"# {user.comment}")
