@@ -6,7 +6,22 @@
 <div class="page-header">
     <h1>RADIUS Clients</h1>
     <div class="header-actions">
-        <a href="{{ url_for('main.new_client') }}" class="btn btn-primary">Add Client</a>
+        <button class="btn btn--secondary" onclick="reloadRadius()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 2v6h-6"/>
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                <path d="M3 22v-6h6"/>
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
+            Reload RADIUS
+        </button>
+        <a href="{{ url_for('main.new_client') }}" class="btn btn--primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add Client
+        </a>
     </div>
 </div>
 
@@ -15,43 +30,209 @@
         <span class="stat-value">{{ clients|length }}</span>
         <span class="stat-label">Total Clients</span>
     </div>
+    <div class="stat">
+        <span class="stat-value stat-enabled" id="activeClientsCount">-</span>
+        <span class="stat-label">Active (last 24h)</span>
+    </div>
 </div>
 
-<table class="users-table">
-    <thead>
-        <tr>
-            <th>Name</th>
-            <th>IP Address</th>
-            <th>Shortname</th>
-            <th>Type</th>
-            <th>Comment</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for client in clients %}
-        <tr>
-            <td class="username">{{ client.name }}</td>
-            <td><code>{{ client.ipaddr }}</code></td>
-            <td>{{ client.shortname or '-' }}</td>
-            <td>{{ client.nastype or '-' }}</td>
-            <td class="comment">{{ client.comment or '-' }}</td>
-            <td class="actions">
-                <a href="{{ url_for('main.edit_client', name=client.name) }}" class="btn btn-sm btn-edit">Edit</a>
-                <button class="btn btn-sm btn-delete" onclick="deleteClient('{{ client.name }}')">Delete</button>
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="6" class="empty-state">No RADIUS clients configured</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="filter-bar">
+    <input type="text" id="searchInput" class="form-input" placeholder="Search clients..." onkeyup="filterClients()" style="flex: 1; max-width: 300px;">
+</div>
+
+<div class="card">
+    <table class="data-table" id="clientsTable">
+        <thead>
+            <tr>
+                <th>Status</th>
+                <th>Name</th>
+                <th>IP Address</th>
+                <th>Shortname</th>
+                <th>Type</th>
+                <th>Secret</th>
+                <th class="text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for client in clients %}
+            <tr data-client="{{ client.name|lower }}" data-ip="{{ client.ipaddr }}">
+                <td class="client-status-cell" data-client-ip="{{ client.ipaddr }}">
+                    <div class="client-activity">
+                        <span class="client-activity-dot" title="Checking activity..."></span>
+                    </div>
+                </td>
+                <td class="username">{{ client.name }}</td>
+                <td><code>{{ client.ipaddr }}</code></td>
+                <td>{{ client.shortname or '-' }}</td>
+                <td>{{ client.nastype or '-' }}</td>
+                <td>
+                    <span class="editable-field editable-secret"
+                          data-field="secret"
+                          data-client="{{ client.name }}"
+                          ondblclick="startSecretEdit(this)">
+                        <code>********</code>
+                        <svg class="edit-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                    </span>
+                </td>
+                <td class="actions">
+                    <a href="{{ url_for('main.edit_client', name=client.name) }}" class="btn btn--primary btn--sm">Edit</a>
+                    <button class="btn btn--danger btn--sm" onclick="deleteClient('{{ client.name }}')">Delete</button>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="7" class="empty-state">No RADIUS clients configured</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="inline-edit-hint">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+    Double-click on secret to edit inline. Green indicator shows clients with recent activity.
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ============================================
+// Search & Filter
+// ============================================
+function filterClients() {
+    const input = document.getElementById('searchInput');
+    const filter = input.value.toLowerCase();
+    const table = document.getElementById('clientsTable');
+    const rows = table.querySelectorAll('tbody tr[data-client]');
+
+    rows.forEach(row => {
+        const name = row.getAttribute('data-client') || '';
+        const ip = row.getAttribute('data-ip') || '';
+
+        if (name.includes(filter) || ip.includes(filter)) {
+            row.style.display = '';
+        } else {
+            row.style.display = 'none';
+        }
+    });
+}
+
+// ============================================
+// Load Client Activity Status
+// ============================================
+async function loadClientActivity() {
+    try {
+        const response = await fetch('/api/activity?limit=500');
+        const data = await response.json();
+
+        if (!response.ok) return;
+
+        // Group by NAS IP and find last activity
+        const clientActivity = {};
+        const now = new Date();
+        const oneDayAgo = new Date(now - 24 * 60 * 60 * 1000);
+
+        data.records.forEach(record => {
+            const nasIp = record['NAS-IP-Address'];
+            if (!nasIp) return;
+
+            const timestamp = record._timestamp ? new Date(record._timestamp) : null;
+            if (!clientActivity[nasIp] || (timestamp && timestamp > clientActivity[nasIp].timestamp)) {
+                clientActivity[nasIp] = {
+                    timestamp: timestamp,
+                    isRecent: timestamp && timestamp > oneDayAgo
+                };
+            }
+        });
+
+        // Update UI
+        let activeCount = 0;
+        document.querySelectorAll('.client-status-cell').forEach(cell => {
+            const clientIp = cell.dataset.clientIp;
+            const dot = cell.querySelector('.client-activity-dot');
+            const activity = clientActivity[clientIp];
+
+            if (activity && activity.isRecent) {
+                dot.classList.add('client-activity-dot--active');
+                dot.title = 'Active in last 24 hours';
+                activeCount++;
+            } else if (activity && activity.timestamp) {
+                dot.title = 'Last seen: ' + activity.timestamp.toLocaleString();
+            } else {
+                dot.title = 'No recent activity';
+            }
+        });
+
+        document.getElementById('activeClientsCount').textContent = activeCount;
+    } catch (err) {
+        console.error('Failed to load client activity:', err);
+    }
+}
+
+// ============================================
+// Inline Secret Editing
+// ============================================
+function startSecretEdit(element) {
+    if (element.querySelector('input')) return;
+
+    const clientName = element.dataset.client;
+
+    const input = document.createElement('input');
+    input.type = 'password';
+    input.className = 'form-input form-input--inline';
+    input.placeholder = 'Enter new secret';
+
+    element.innerHTML = '';
+    element.appendChild(input);
+    input.focus();
+
+    const save = async () => {
+        const newValue = input.value.trim();
+
+        if (newValue) {
+            try {
+                const response = await fetch(`/api/clients/${encodeURIComponent(clientName)}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ secret: newValue })
+                });
+
+                if (response.ok) {
+                    Toast.success('Secret updated');
+                } else {
+                    const data = await response.json();
+                    Toast.error(data.error || 'Update failed');
+                }
+            } catch (err) {
+                Toast.error('Error: ' + err.message);
+            }
+        }
+
+        // Restore display
+        element.innerHTML = '<code>********</code><svg class="edit-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+    };
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur();
+        } else if (e.key === 'Escape') {
+            element.innerHTML = '<code>********</code><svg class="edit-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+        }
+    });
+}
+
+// ============================================
+// Client Actions
+// ============================================
 async function deleteClient(name) {
     if (!confirm(`Are you sure you want to delete client "${name}"?`)) {
         return;
@@ -63,14 +244,33 @@ async function deleteClient(name) {
         });
 
         if (response.ok) {
-            window.location.reload();
+            Toast.success('Client deleted');
+            setTimeout(() => window.location.reload(), 500);
         } else {
             const data = await response.json();
-            alert(data.error || 'Failed to delete client');
+            Toast.error(data.error || 'Failed to delete client');
         }
     } catch (err) {
-        alert('Error: ' + err.message);
+        Toast.error('Error: ' + err.message);
     }
 }
+
+async function reloadRadius() {
+    try {
+        const response = await fetch('/api/reload', { method: 'POST' });
+        const data = await response.json();
+
+        if (response.ok) {
+            Toast.success(data.message);
+        } else {
+            Toast.error(data.error || 'Failed to reload FreeRADIUS');
+        }
+    } catch (err) {
+        Toast.error('Error: ' + err.message);
+    }
+}
+
+// Load activity on page load
+loadClientActivity();
 </script>
 {% endblock %}

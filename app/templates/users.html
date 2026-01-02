@@ -6,11 +6,21 @@
 <div class="page-header">
     <h1>VPN Users</h1>
     <div class="header-actions">
-        <button class="btn btn-secondary" onclick="reloadRadius()">
+        <button class="btn btn--secondary" onclick="reloadRadius()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 2v6h-6"/>
+                <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                <path d="M3 22v-6h6"/>
+                <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+            </svg>
             Reload RADIUS
         </button>
-        <a href="{{ url_for('main.new_user') }}" class="btn btn-primary">
-            + Add User
+        <a href="{{ url_for('main.new_user') }}" class="btn btn--primary">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="12" y1="5" x2="12" y2="19"/>
+                <line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Add User
         </a>
     </div>
 </div>
@@ -30,77 +40,279 @@
     </div>
 </div>
 
-<div class="search-bar">
-    <input type="text" id="searchInput" placeholder="Search users..." onkeyup="filterUsers()">
+<div class="filter-bar">
+    <input type="text" id="searchInput" class="form-input" placeholder="Search users..." onkeyup="filterUsers()" style="flex: 1; max-width: 300px;">
+    <div id="bulkActions" class="bulk-actions hidden">
+        <span class="bulk-count"><span id="selectedCount">0</span> selected</span>
+        <button class="btn btn--secondary btn--sm" onclick="bulkToggle()">Toggle Status</button>
+        <button class="btn btn--danger btn--sm" onclick="bulkDelete()">Delete</button>
+        <button class="btn btn--ghost btn--sm" onclick="clearSelection()">Clear</button>
+    </div>
 </div>
 
-<table class="users-table" id="usersTable">
-    <thead>
-        <tr>
-            <th>Username</th>
-            <th>Comment</th>
-            <th>Status</th>
-            <th>Actions</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for user in users %}
-        <tr class="{% if user.disabled %}row-disabled{% endif %}" data-username="{{ user.username|lower }}">
-            <td class="username">{{ user.username }}</td>
-            <td class="comment">{{ user.comment or '-' }}</td>
-            <td>
-                <span class="status-badge {% if user.disabled %}status-disabled{% else %}status-enabled{% endif %}">
-                    {{ 'Disabled' if user.disabled else 'Enabled' }}
-                </span>
-            </td>
-            <td class="actions">
-                <button class="btn btn-sm btn-toggle"
-                        onclick="toggleUser('{{ user.username }}')"
-                        title="{{ 'Enable' if user.disabled else 'Disable' }}">
-                    {{ 'Enable' if user.disabled else 'Disable' }}
-                </button>
-                {% if not user.disabled %}
-                <a href="{{ url_for('main.edit_user', username=user.username) }}"
-                   class="btn btn-sm btn-edit" title="Edit">
-                    Edit
-                </a>
-                {% endif %}
-                <button class="btn btn-sm btn-delete"
-                        onclick="deleteUser('{{ user.username }}')"
-                        title="Delete">
-                    Delete
-                </button>
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="4" class="empty-state">No users found</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
+<div class="card">
+    <table class="data-table" id="usersTable" data-sortable>
+        <thead>
+            <tr>
+                <th class="checkbox-col">
+                    <input type="checkbox" id="selectAll" onchange="toggleSelectAll(this)">
+                </th>
+                <th data-sort="username">Username</th>
+                <th data-sort="comment">Comment</th>
+                <th>Password</th>
+                <th data-sort="status">Status</th>
+                <th class="text-right">Actions</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for user in users %}
+            <tr class="{% if user.disabled %}row--disabled{% endif %}" data-username="{{ user.username }}" data-username-lower="{{ user.username|lower }}">
+                <td class="checkbox-col">
+                    <input type="checkbox" class="user-select" value="{{ user.username }}" onchange="updateBulkActions()">
+                </td>
+                <td class="username" data-column="username">
+                    <span class="user-status-dot {% if not user.disabled %}user-status-dot--active{% endif %}"></span>
+                    {{ user.username }}
+                </td>
+                <td class="comment" data-column="comment">
+                    <span class="editable-field"
+                          data-field="comment"
+                          data-username="{{ user.username }}"
+                          ondblclick="startInlineEdit(this)">{{ user.comment or '-' }}</span>
+                </td>
+                <td>
+                    <span class="editable-field editable-password"
+                          data-field="password"
+                          data-username="{{ user.username }}"
+                          ondblclick="startInlineEdit(this)">
+                        <code>********</code>
+                        <svg class="edit-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+                        </svg>
+                    </span>
+                </td>
+                <td data-column="status">
+                    <span class="badge {% if user.disabled %}badge--neutral{% else %}badge--success{% endif %}">
+                        {{ 'Disabled' if user.disabled else 'Enabled' }}
+                    </span>
+                </td>
+                <td class="actions">
+                    <button class="btn btn--ghost btn--sm"
+                            onclick="toggleUser('{{ user.username }}')"
+                            title="{{ 'Enable' if user.disabled else 'Disable' }}">
+                        {{ 'Enable' if user.disabled else 'Disable' }}
+                    </button>
+                    {% if not user.disabled %}
+                    <a href="{{ url_for('main.edit_user', username=user.username) }}"
+                       class="btn btn--primary btn--sm" title="Edit">
+                        Edit
+                    </a>
+                    {% endif %}
+                    <button class="btn btn--danger btn--sm"
+                            onclick="deleteUser('{{ user.username }}')"
+                            title="Delete">
+                        Delete
+                    </button>
+                </td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="6" class="empty-state">No users found</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="inline-edit-hint">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="12" cy="12" r="10"/>
+        <line x1="12" y1="16" x2="12" y2="12"/>
+        <line x1="12" y1="8" x2="12.01" y2="8"/>
+    </svg>
+    Double-click on password or comment to edit inline
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+// ============================================
+// Search & Filter
+// ============================================
 function filterUsers() {
     const input = document.getElementById('searchInput');
     const filter = input.value.toLowerCase();
     const table = document.getElementById('usersTable');
-    const rows = table.getElementsByTagName('tr');
+    const rows = table.querySelectorAll('tbody tr[data-username]');
 
-    for (let i = 1; i < rows.length; i++) {
-        const username = rows[i].getAttribute('data-username') || '';
-        const comment = rows[i].querySelector('.comment')?.textContent.toLowerCase() || '';
+    rows.forEach(row => {
+        const username = row.getAttribute('data-username-lower') || '';
+        const comment = row.querySelector('.comment')?.textContent.toLowerCase() || '';
 
         if (username.includes(filter) || comment.includes(filter)) {
-            rows[i].style.display = '';
+            row.style.display = '';
         } else {
-            rows[i].style.display = 'none';
+            row.style.display = 'none';
         }
+    });
+}
+
+// ============================================
+// Bulk Selection
+// ============================================
+function toggleSelectAll(checkbox) {
+    const checkboxes = document.querySelectorAll('.user-select');
+    checkboxes.forEach(cb => {
+        const row = cb.closest('tr');
+        if (row.style.display !== 'none') {
+            cb.checked = checkbox.checked;
+        }
+    });
+    updateBulkActions();
+}
+
+function updateBulkActions() {
+    const selected = document.querySelectorAll('.user-select:checked');
+    const bulkActions = document.getElementById('bulkActions');
+    const selectedCount = document.getElementById('selectedCount');
+
+    if (selected.length > 0) {
+        bulkActions.classList.remove('hidden');
+        selectedCount.textContent = selected.length;
+    } else {
+        bulkActions.classList.add('hidden');
     }
 }
 
+function clearSelection() {
+    document.querySelectorAll('.user-select').forEach(cb => cb.checked = false);
+    document.getElementById('selectAll').checked = false;
+    updateBulkActions();
+}
+
+function getSelectedUsers() {
+    return Array.from(document.querySelectorAll('.user-select:checked'))
+        .map(cb => cb.value);
+}
+
+async function bulkToggle() {
+    const users = getSelectedUsers();
+    if (!users.length) return;
+
+    if (!confirm(`Toggle status for ${users.length} user(s)?`)) return;
+
+    for (const username of users) {
+        try {
+            await fetch(`/api/users/${username}/toggle`, { method: 'POST' });
+        } catch (e) {
+            console.error(`Failed to toggle ${username}:`, e);
+        }
+    }
+
+    Toast.success(`Toggled ${users.length} user(s)`);
+    setTimeout(() => location.reload(), 500);
+}
+
+async function bulkDelete() {
+    const users = getSelectedUsers();
+    if (!users.length) return;
+
+    if (!confirm(`Delete ${users.length} user(s)? This cannot be undone.`)) return;
+
+    for (const username of users) {
+        try {
+            await fetch(`/api/users/${username}`, { method: 'DELETE' });
+        } catch (e) {
+            console.error(`Failed to delete ${username}:`, e);
+        }
+    }
+
+    Toast.success(`Deleted ${users.length} user(s)`);
+    setTimeout(() => location.reload(), 500);
+}
+
+// ============================================
+// Inline Editing
+// ============================================
+function startInlineEdit(element) {
+    if (element.querySelector('input')) return; // Already editing
+
+    const field = element.dataset.field;
+    const username = element.dataset.username;
+    const currentValue = field === 'password' ? '' : element.textContent.trim();
+    const displayValue = currentValue === '-' ? '' : currentValue;
+
+    const input = document.createElement('input');
+    input.type = field === 'password' ? 'password' : 'text';
+    input.className = 'form-input form-input--inline';
+    input.value = displayValue;
+    input.placeholder = field === 'password' ? 'Enter new password' : 'Enter comment';
+
+    element.innerHTML = '';
+    element.appendChild(input);
+    input.focus();
+    input.select();
+
+    const save = async () => {
+        const newValue = input.value.trim();
+
+        if (field === 'password' && !newValue) {
+            // Empty password, cancel edit
+            element.innerHTML = '<code>********</code><svg class="edit-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+            return;
+        }
+
+        if (newValue !== displayValue || field === 'password') {
+            try {
+                const payload = {};
+                payload[field] = newValue;
+
+                const response = await fetch(`/api/users/${username}`, {
+                    method: 'PUT',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+
+                if (response.ok) {
+                    Toast.success(`${field === 'password' ? 'Password' : 'Comment'} updated`);
+                    if (field === 'password') {
+                        element.innerHTML = '<code>********</code><svg class="edit-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+                    } else {
+                        element.textContent = newValue || '-';
+                    }
+                } else {
+                    const data = await response.json();
+                    Toast.error(data.error || 'Update failed');
+                    element.textContent = displayValue || '-';
+                }
+            } catch (err) {
+                Toast.error('Error: ' + err.message);
+                element.textContent = displayValue || '-';
+            }
+        } else {
+            element.textContent = displayValue || '-';
+        }
+    };
+
+    input.addEventListener('blur', save);
+    input.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            input.blur();
+        } else if (e.key === 'Escape') {
+            if (field === 'password') {
+                element.innerHTML = '<code>********</code><svg class="edit-hint" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+            } else {
+                element.textContent = displayValue || '-';
+            }
+        }
+    });
+}
+
+// ============================================
+// Single User Actions
+// ============================================
 async function toggleUser(username) {
     if (!confirm(`Toggle status for user "${username}"?`)) return;
 
@@ -111,12 +323,13 @@ async function toggleUser(username) {
         const data = await response.json();
 
         if (response.ok) {
-            location.reload();
+            Toast.success(data.message);
+            setTimeout(() => location.reload(), 500);
         } else {
-            alert(data.error || 'Failed to toggle user');
+            Toast.error(data.error || 'Failed to toggle user');
         }
     } catch (err) {
-        alert('Error: ' + err.message);
+        Toast.error('Error: ' + err.message);
     }
 }
 
@@ -132,18 +345,17 @@ async function deleteUser(username) {
         const data = await response.json();
 
         if (response.ok) {
-            location.reload();
+            Toast.success(data.message);
+            setTimeout(() => location.reload(), 500);
         } else {
-            alert(data.error || 'Failed to delete user');
+            Toast.error(data.error || 'Failed to delete user');
         }
     } catch (err) {
-        alert('Error: ' + err.message);
+        Toast.error('Error: ' + err.message);
     }
 }
 
 async function reloadRadius() {
-    if (!confirm('Reload FreeRADIUS configuration?')) return;
-
     try {
         const response = await fetch('/api/reload', {
             method: 'POST'
@@ -151,13 +363,21 @@ async function reloadRadius() {
         const data = await response.json();
 
         if (response.ok) {
-            alert('FreeRADIUS configuration reloaded successfully');
+            Toast.success(data.message);
         } else {
-            alert(data.error || 'Failed to reload FreeRADIUS');
+            Toast.error(data.error || 'Failed to reload FreeRADIUS');
         }
     } catch (err) {
-        alert('Error: ' + err.message);
+        Toast.error('Error: ' + err.message);
     }
+}
+
+// Apply search from URL if present
+const urlParams = new URLSearchParams(window.location.search);
+const searchParam = urlParams.get('search');
+if (searchParam) {
+    document.getElementById('searchInput').value = searchParam;
+    filterUsers();
 }
 </script>
 {% endblock %}

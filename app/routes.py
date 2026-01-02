@@ -88,8 +88,47 @@ def setup():
 @setup_required
 @login_required
 def index():
-    """Main dashboard - redirect to users list."""
-    return redirect(url_for('main.users'))
+    """Redirect to dashboard."""
+    return redirect(url_for('main.dashboard'))
+
+
+@main_bp.route('/dashboard')
+@setup_required
+@login_required
+def dashboard():
+    """Main dashboard with live sessions and quick stats."""
+    # Get user stats
+    user_manager = get_file_manager()
+    users_list = user_manager.parse_users()
+    total_users = len(users_list)
+    enabled_users = len([u for u in users_list if not u.disabled])
+
+    # Get client stats
+    clients_manager = get_clients_manager()
+    clients_list = clients_manager.parse_clients()
+    total_clients = len(clients_list)
+    clients_dict = {c.ipaddr: c.name for c in clients_list}
+
+    # Get active sessions
+    log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
+    all_records = get_activity_records(log_dir, limit=500)
+    active_sessions = get_active_sessions(all_records)
+
+    # Enrich sessions with client names
+    for session in active_sessions:
+        nas_ip = session.get('NAS-IP-Address', '')
+        session['_nas_name'] = clients_dict.get(nas_ip, session.get('NAS-Identifier', nas_ip))
+
+    # Get recent activity (last 10)
+    recent_activity = all_records[:10]
+
+    return render_template('dashboard.html',
+                           total_users=total_users,
+                           enabled_users=enabled_users,
+                           total_clients=total_clients,
+                           active_sessions=active_sessions,
+                           active_count=len(active_sessions),
+                           recent_activity=recent_activity)
 
 
 @main_bp.route('/login', methods=['GET', 'POST'])
@@ -916,3 +955,70 @@ def api_active_sessions():
         'sessions': active_sessions,
         'total': len(active_sessions)
     })
+
+
+# ============== Server-Sent Events ==============
+
+@api_bp.route('/events')
+@login_required
+def sse_events():
+    """Server-Sent Events endpoint for real-time updates."""
+    import time
+
+    def generate():
+        log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
+        last_sessions = {}
+        last_activity_count = 0
+
+        while True:
+            try:
+                # Get current sessions
+                all_records = get_activity_records(log_dir, limit=500)
+                current_sessions = get_active_sessions(all_records)
+
+                # Build session map
+                current_map = {}
+                for s in current_sessions:
+                    sid = s.get('Acct-Unique-Session-Id') or s.get('Acct-Session-Id')
+                    if sid:
+                        current_map[sid] = s
+
+                # Check for new sessions
+                for sid, session in current_map.items():
+                    if sid not in last_sessions:
+                        # Convert timestamp for JSON
+                        session_data = dict(session)
+                        if session_data.get('_timestamp'):
+                            session_data['_timestamp'] = session_data['_timestamp'].isoformat()
+                        session_data['id'] = sid
+                        session_data['username'] = session.get('User-Name', 'Unknown')
+                        yield f"event: session_start\ndata: {json.dumps(session_data)}\n\n"
+
+                # Check for ended sessions
+                for sid in list(last_sessions.keys()):
+                    if sid not in current_map:
+                        yield f"event: session_stop\ndata: {json.dumps({'id': sid})}\n\n"
+
+                # Check for new activity
+                if len(all_records) != last_activity_count:
+                    yield f"event: activity_update\ndata: {json.dumps({'count': len(all_records)})}\n\n"
+                    last_activity_count = len(all_records)
+
+                last_sessions = current_map
+
+            except Exception as e:
+                current_app.logger.error(f"SSE error: {e}")
+                yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
+
+            time.sleep(5)  # Check every 5 seconds
+
+    from flask import Response
+    return Response(
+        generate(),
+        mimetype='text/event-stream',
+        headers={
+            'Cache-Control': 'no-cache',
+            'X-Accel-Buffering': 'no',
+            'Connection': 'keep-alive'
+        }
+    )

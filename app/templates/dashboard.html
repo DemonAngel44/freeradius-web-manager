@@ -1,0 +1,275 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - FreeRADIUS Web Manager{% endblock %}
+
+{% block content %}
+<div data-live-updates>
+    <div class="page-header">
+        <h1>Dashboard</h1>
+        <div class="header-actions">
+            <button class="btn btn--secondary" onclick="window.location.reload()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Refresh
+            </button>
+            <button class="btn btn--primary" onclick="reloadRadius()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 2v6h-6"/>
+                    <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+                    <path d="M3 22v-6h6"/>
+                    <path d="M21 12a9 9 0 0 1-15 6.7L3 16"/>
+                </svg>
+                Reload RADIUS
+            </button>
+        </div>
+    </div>
+
+    <!-- KPI Cards -->
+    <div class="kpi-row">
+        <div class="kpi-card kpi-card--clickable" onclick="window.location.href='{{ url_for('main.active_users') }}'">
+            <div class="kpi-icon kpi-icon--warning">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                </svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">{{ active_count }}</span>
+                <span class="kpi-label">Active Sessions</span>
+            </div>
+        </div>
+
+        <div class="kpi-card kpi-card--clickable" onclick="window.location.href='{{ url_for('main.users') }}'">
+            <div class="kpi-icon kpi-icon--success">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="8.5" cy="7" r="4"/>
+                    <line x1="20" y1="8" x2="20" y2="14"/>
+                    <line x1="23" y1="11" x2="17" y2="11"/>
+                </svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">{{ total_users }}</span>
+                <span class="kpi-label">Total Users ({{ enabled_users }} active)</span>
+            </div>
+        </div>
+
+        <div class="kpi-card kpi-card--clickable" onclick="window.location.href='{{ url_for('main.clients') }}'">
+            <div class="kpi-icon kpi-icon--primary">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
+                    <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
+                    <line x1="6" y1="6" x2="6.01" y2="6"/>
+                    <line x1="6" y1="18" x2="6.01" y2="18"/>
+                </svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">{{ total_clients }}</span>
+                <span class="kpi-label">RADIUS Clients</span>
+            </div>
+        </div>
+
+        <div class="kpi-card kpi-card--clickable" onclick="window.location.href='{{ url_for('main.statistics') }}'">
+            <div class="kpi-icon kpi-icon--danger">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="20" x2="18" y2="10"/>
+                    <line x1="12" y1="20" x2="12" y2="4"/>
+                    <line x1="6" y1="20" x2="6" y2="14"/>
+                </svg>
+            </div>
+            <div class="kpi-content">
+                <span class="kpi-value">Statistics</span>
+                <span class="kpi-label">View detailed analytics</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Live Sessions Section -->
+    <div class="card mb-6">
+        <div class="card__header">
+            <h2 class="card__title">Live Sessions</h2>
+            <a href="{{ url_for('main.active_users') }}" class="btn btn--ghost btn--sm">View All</a>
+        </div>
+        <div class="card__body">
+            {% if active_sessions %}
+            <div class="sessions-grid" id="sessionsGrid">
+                {% for session in active_sessions %}
+                <div class="session-card" data-session-id="{{ session.get('Acct-Session-Id', '') }}">
+                    <div class="session-card__header">
+                        <span class="session-card__user">{{ session.get('User-Name', 'Unknown') }}</span>
+                        <span class="session-card__status">Connected</span>
+                    </div>
+                    <div class="session-card__body">
+                        <div class="session-card__detail">
+                            <span class="session-card__label">VPN IP</span>
+                            <span class="session-card__value">{{ session.get('Framed-IP-Address', '-') }}</span>
+                        </div>
+                        <div class="session-card__detail">
+                            <span class="session-card__label">Source</span>
+                            <span class="session-card__value">{{ session.get('Calling-Station-Id', '-') }}</span>
+                        </div>
+                        <div class="session-card__detail">
+                            <span class="session-card__label">Gateway</span>
+                            <span class="session-card__value">{{ session.get('_nas_name', '-') }}</span>
+                        </div>
+                        <div class="session-card__detail">
+                            <span class="session-card__label">Connected</span>
+                            <span class="session-card__value">{{ session.get('_timestamp_str', '-') }}</span>
+                        </div>
+                    </div>
+                    <div class="session-card__footer">
+                        <button class="btn btn--danger btn--sm" onclick="disconnectSession('{{ session.get('Acct-Session-Id', '') }}', '{{ session.get('User-Name', '') }}')">
+                            Disconnect
+                        </button>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state-card">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="margin-bottom: 16px; opacity: 0.5;">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <line x1="19" y1="8" x2="19" y2="14"/>
+                    <line x1="22" y1="11" x2="16" y2="11"/>
+                </svg>
+                <p>No active sessions</p>
+                <span class="empty-hint">Users will appear here when they connect via VPN</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Recent Activity Section -->
+    <div class="card">
+        <div class="card__header">
+            <h2 class="card__title">Recent Activity</h2>
+            <a href="{{ url_for('main.activity') }}" class="btn btn--ghost btn--sm">View All</a>
+        </div>
+        <div class="card__body">
+            {% if recent_activity %}
+            <div class="activity-stream" id="activityStream">
+                {% for record in recent_activity %}
+                <div class="activity-item">
+                    {% if record.get('Acct-Status-Type') == 'Start' %}
+                    <div class="activity-item__icon activity-item__icon--connect">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="15 3 21 3 21 9"/>
+                            <line x1="10" y1="14" x2="21" y2="3"/>
+                        </svg>
+                    </div>
+                    {% else %}
+                    <div class="activity-item__icon activity-item__icon--disconnect">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="9 21 3 21 3 15"/>
+                            <line x1="14" y1="10" x2="3" y2="21"/>
+                        </svg>
+                    </div>
+                    {% endif %}
+                    <div class="activity-item__content">
+                        <div class="activity-item__text">
+                            <strong>{{ record.get('User-Name', 'Unknown') }}</strong>
+                            {% if record.get('Acct-Status-Type') == 'Start' %}
+                            connected from {{ record.get('Calling-Station-Id', '-') }}
+                            {% elif record.get('Acct-Status-Type') == 'Stop' %}
+                            disconnected
+                            {% else %}
+                            {{ record.get('Acct-Status-Type', 'unknown event') }}
+                            {% endif %}
+                        </div>
+                        <div class="activity-item__time">{{ record.get('_timestamp_str', '-') }}</div>
+                    </div>
+                </div>
+                {% endfor %}
+            </div>
+            {% else %}
+            <div class="empty-state-card">
+                <p>No recent activity</p>
+                <span class="empty-hint">Activity will appear here as users connect and disconnect</span>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+</div>
+
+<!-- Mobile Action Bar -->
+<div class="mobile-action-bar">
+    <a href="{{ url_for('main.new_user') }}" class="btn btn--primary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+            <circle cx="8.5" cy="7" r="4"/>
+            <line x1="20" y1="8" x2="20" y2="14"/>
+            <line x1="23" y1="11" x2="17" y2="11"/>
+        </svg>
+        <span class="mobile-action-label">Add User</span>
+    </a>
+    <a href="{{ url_for('main.activity') }}" class="btn btn--secondary">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>
+        </svg>
+        <span class="mobile-action-label">Activity</span>
+    </a>
+    <button class="btn btn--secondary" onclick="reloadRadius()">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 2v6h-6"/>
+            <path d="M3 12a9 9 0 0 1 15-6.7L21 8"/>
+        </svg>
+        <span class="mobile-action-label">Reload</span>
+    </button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function reloadRadius() {
+    try {
+        const response = await fetch('/api/reload', { method: 'POST' });
+        const data = await response.json();
+
+        if (response.ok) {
+            Toast.success(data.message);
+        } else {
+            Toast.error(data.error || 'Failed to reload');
+        }
+    } catch (err) {
+        Toast.error('Error: ' + err.message);
+    }
+}
+
+async function disconnectSession(sessionId, username) {
+    if (!confirm(`Disconnect user "${username}"?\n\nThis will terminate their VPN session.`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/sessions/${encodeURIComponent(sessionId)}/disconnect`, {
+            method: 'POST'
+        });
+
+        const data = await response.json();
+        Toast.info(data.message + (data.note ? ' ' + data.note : ''));
+    } catch (err) {
+        Toast.error('Error: ' + err.message);
+    }
+}
+
+// Handle live updates
+LiveUpdates.on('session_start', (session) => {
+    // Reload to show new session
+    window.location.reload();
+});
+
+LiveUpdates.on('session_stop', (data) => {
+    // Remove session card
+    const card = document.querySelector(`[data-session-id="${data.id}"]`);
+    if (card) {
+        card.style.animation = 'fadeOut 0.3s ease';
+        setTimeout(() => card.remove(), 300);
+    }
+});
+</script>
+{% endblock %}

@@ -2,31 +2,29 @@
 
 {% block title %}Login - FreeRADIUS Web Manager{% endblock %}
 
-{% block content %}
-<div class="login-container">
-    <div class="login-box">
-        <h1>FreeRADIUS Web Manager</h1>
-        <p class="login-subtitle">Sign in with your credentials</p>
+{% block login_content %}
+<div class="login-box">
+    <h1>FreeRADIUS Web Manager</h1>
+    <p class="login-subtitle">Sign in with your credentials</p>
 
-        <form method="POST" class="login-form">
-            <div class="form-group">
-                <label for="username">Username</label>
-                <input type="text" id="username" name="username" required autofocus
-                       placeholder="Username">
-            </div>
+    <form method="POST" class="login-form">
+        <div class="form-group">
+            <label for="username">Username</label>
+            <input type="text" id="username" name="username" class="form-input" required autofocus
+                   placeholder="Username">
+        </div>
 
-            <div class="form-group">
-                <label for="password">Password</label>
-                <input type="password" id="password" name="password" required
-                       placeholder="Password">
-            </div>
+        <div class="form-group">
+            <label for="password">Password</label>
+            <input type="password" id="password" name="password" class="form-input" required
+                   placeholder="Password">
+        </div>
 
-            <button type="submit" class="btn btn-primary btn-block">Sign In</button>
-        </form>
+        <button type="submit" class="btn btn--primary btn--block">Sign In</button>
+    </form>
 
-        <p class="login-note">
-            Authentication is performed against the RADIUS server.
-        </p>
-    </div>
+    <p class="login-note">
+        Authentication is performed against the RADIUS server.
+    </p>
 </div>
 {% endblock %}

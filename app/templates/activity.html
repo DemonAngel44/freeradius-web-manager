@@ -3,149 +3,206 @@
 {% block title %}Activity - FreeRADIUS Web Manager{% endblock %}
 
 {% block content %}
-<div class="page-header">
-    <h1>VPN Activity</h1>
-    <div class="header-actions">
-        <button class="btn btn-secondary" onclick="refreshStatus()">
-            Refresh Status
-        </button>
+<div data-live-updates>
+    <div class="page-header">
+        <h1>VPN Activity</h1>
+        <div class="header-actions">
+            <div class="auto-refresh-indicator" id="autoRefreshIndicator">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                <span>Auto-refresh: <span id="refreshCountdown">30</span>s</span>
+            </div>
+            <button class="btn btn--secondary" onclick="refreshActivity()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Refresh Now
+            </button>
+            <button class="btn btn--primary" onclick="exportActivity()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                </svg>
+                Export CSV
+            </button>
+        </div>
     </div>
-</div>
 
-<div class="server-status" id="serverStatus">
-    <span class="status-indicator loading"></span>
-    <span>Checking server status...</span>
-</div>
+    <div class="server-status" id="serverStatus">
+        <span class="status-indicator loading"></span>
+        <span>Checking server status...</span>
+    </div>
 
-<div class="filter-bar">
-    <form method="GET" class="filter-form">
-        <select name="user" onchange="this.form.submit()">
-            <option value="">All Users</option>
-            {% for user in users %}
-            <option value="{{ user }}" {% if user == user_filter %}selected{% endif %}>{{ user }}</option>
-            {% endfor %}
-        </select>
-        <select name="limit" onchange="this.form.submit()">
-            <option value="50" {% if request.args.get('limit', '100') == '50' %}selected{% endif %}>50 records</option>
-            <option value="100" {% if request.args.get('limit', '100') == '100' %}selected{% endif %}>100 records</option>
-            <option value="200" {% if request.args.get('limit', '100') == '200' %}selected{% endif %}>200 records</option>
-            <option value="500" {% if request.args.get('limit', '100') == '500' %}selected{% endif %}>500 records</option>
-        </select>
-        <label class="checkbox-label">
-            <input type="checkbox" name="active" value="1" {% if show_active %}checked{% endif %} onchange="this.form.submit()">
-            Active Only
-        </label>
-        {% if user_filter or show_active %}
-        <a href="{{ url_for('main.activity') }}" class="btn btn-secondary">Clear Filters</a>
-        {% endif %}
-    </form>
-</div>
+    <div class="filter-bar">
+        <form method="GET" class="filter-form" style="display: flex; gap: 16px; align-items: center; flex-wrap: wrap; width: 100%;">
+            <select name="user" class="form-select" onchange="this.form.submit()" style="min-width: 150px;">
+                <option value="">All Users</option>
+                {% for user in users %}
+                <option value="{{ user }}" {% if user == user_filter %}selected{% endif %}>{{ user }}</option>
+                {% endfor %}
+            </select>
+            <select name="limit" class="form-select" onchange="this.form.submit()" style="min-width: 120px;">
+                <option value="50" {% if request.args.get('limit', '100') == '50' %}selected{% endif %}>50 records</option>
+                <option value="100" {% if request.args.get('limit', '100') == '100' %}selected{% endif %}>100 records</option>
+                <option value="200" {% if request.args.get('limit', '100') == '200' %}selected{% endif %}>200 records</option>
+                <option value="500" {% if request.args.get('limit', '100') == '500' %}selected{% endif %}>500 records</option>
+            </select>
+            <label class="checkbox-label">
+                <input type="checkbox" name="active" value="1" {% if show_active %}checked{% endif %} onchange="this.form.submit()">
+                Active Only
+            </label>
+            {% if user_filter or show_active %}
+            <a href="{{ url_for('main.activity') }}" class="btn btn--ghost btn--sm">Clear Filters</a>
+            {% endif %}
+        </form>
+    </div>
 
-<div class="stats-bar">
-    <div class="stat stat-clickable {% if show_active %}stat-active{% endif %}" onclick="window.location='{{ url_for('main.activity', active='1') }}'">
-        <span class="stat-value stat-warning">{{ active_count }}</span>
-        <span class="stat-label">Active Now</span>
+    <div class="stats-bar">
+        <div class="stat stat--clickable" onclick="window.location='{{ url_for('main.activity', active='1') }}'">
+            <span class="stat-value stat-warning" id="activeCount">{{ active_count }}</span>
+            <span class="stat-label">Active Now</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value" id="recordCount">{{ records|length }}</span>
+            <span class="stat-label">Records</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value stat-enabled" id="connectCount">{{ records|selectattr('Acct-Status-Type', 'equalto', 'Start')|list|length }}</span>
+            <span class="stat-label">Connections</span>
+        </div>
+        <div class="stat">
+            <span class="stat-value stat-disabled" id="disconnectCount">{{ records|selectattr('Acct-Status-Type', 'equalto', 'Stop')|list|length }}</span>
+            <span class="stat-label">Disconnections</span>
+        </div>
     </div>
-    <div class="stat">
-        <span class="stat-value">{{ records|length }}</span>
-        <span class="stat-label">Records</span>
-    </div>
-    <div class="stat">
-        <span class="stat-value stat-enabled">{{ records|selectattr('Acct-Status-Type', 'equalto', 'Start')|list|length }}</span>
-        <span class="stat-label">Connections</span>
-    </div>
-    <div class="stat">
-        <span class="stat-value stat-disabled">{{ records|selectattr('Acct-Status-Type', 'equalto', 'Stop')|list|length }}</span>
-        <span class="stat-label">Disconnections</span>
-    </div>
-</div>
 
-{% if show_active and active_sessions %}
-<div class="active-sessions-panel">
-    <h3>Currently Connected Users</h3>
-    <div class="active-users-grid">
-        {% for session in active_sessions %}
-        <div class="active-user-card">
-            <div class="active-user-name">{{ session.get('User-Name', 'Unknown') }}</div>
-            <div class="active-user-details">
-                <span>IP: {{ session.get('Framed-IP-Address', '-') }}</span>
-                <span>From: {{ session.get('Calling-Station-Id', '-') }}</span>
-                <span>Since: {{ session.get('_timestamp_str', '-') }}</span>
+    {% if show_active and active_sessions %}
+    <div class="card mb-6">
+        <div class="card__header">
+            <h2 class="card__title">Currently Connected Users</h2>
+            <span class="badge badge--success">{{ active_sessions|length }} Active</span>
+        </div>
+        <div class="card__body">
+            <div class="sessions-grid" id="activeSessionsGrid">
+                {% for session in active_sessions %}
+                <div class="session-card" data-session-id="{{ session.get('Acct-Session-Id', '') }}">
+                    <div class="session-card__header">
+                        <span class="session-card__user">{{ session.get('User-Name', 'Unknown') }}</span>
+                        <span class="session-card__status">Connected</span>
+                    </div>
+                    <div class="session-card__body">
+                        <div class="session-card__detail">
+                            <span class="session-card__label">VPN IP</span>
+                            <span class="session-card__value">{{ session.get('Framed-IP-Address', '-') }}</span>
+                        </div>
+                        <div class="session-card__detail">
+                            <span class="session-card__label">Source</span>
+                            <span class="session-card__value">{{ session.get('Calling-Station-Id', '-') }}</span>
+                        </div>
+                        <div class="session-card__detail">
+                            <span class="session-card__label">Connected</span>
+                            <span class="session-card__value">{{ session.get('_timestamp_str', '-') }}</span>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
             </div>
         </div>
-        {% endfor %}
+    </div>
+    {% endif %}
+
+    <div class="card">
+        <div class="card__header">
+            <h2 class="card__title">Activity Log</h2>
+            <div class="live-badge" id="liveBadge">
+                <span class="live-dot"></span>
+                LIVE
+            </div>
+        </div>
+        <div class="card__body" style="padding: 0;">
+            <table class="data-table" id="activityTable">
+                <thead>
+                    <tr>
+                        <th>Time</th>
+                        <th>User</th>
+                        <th>Status</th>
+                        <th>VPN IP</th>
+                        <th>Source IP</th>
+                        <th>Gateway</th>
+                        <th>Duration</th>
+                        <th>Data</th>
+                    </tr>
+                </thead>
+                <tbody id="activityBody">
+                    {% for record in records %}
+                    <tr class="{% if record.get('Acct-Status-Type') == 'Start' %}row--start{% elif record.get('Acct-Status-Type') == 'Stop' %}row--stop{% endif %}" data-timestamp="{{ record.get('_timestamp_str', '') }}">
+                        <td class="font-mono" style="font-size: 0.75rem; white-space: nowrap;">{{ record.get('_timestamp_str', '-') }}</td>
+                        <td class="username">{{ record.get('User-Name', '-') }}</td>
+                        <td>
+                            {% set status = record.get('Acct-Status-Type', '') %}
+                            <span class="badge {% if status == 'Start' %}badge--success{% elif status == 'Stop' %}badge--danger{% else %}badge--warning{% endif %}">
+                                {{ status or '-' }}
+                            </span>
+                        </td>
+                        <td>{{ record.get('Framed-IP-Address', '-') }}</td>
+                        <td>{{ record.get('Calling-Station-Id', '-') }}</td>
+                        <td class="text-muted" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;">{{ record.get('NAS-Identifier', record.get('NAS-IP-Address', '-'))|truncate(25) }}</td>
+                        <td>
+                            {% if record.get('Acct-Session-Time') %}
+                                {% set secs = record.get('Acct-Session-Time')|int %}
+                                {% set hours = secs // 3600 %}
+                                {% set mins = (secs % 3600) // 60 %}
+                                {% set secs = secs % 60 %}
+                                {{ '%02d:%02d:%02d'|format(hours, mins, secs) }}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                        <td>
+                            {% if record.get('Acct-Input-Octets') or record.get('Acct-Output-Octets') %}
+                                {% set input = (record.get('Acct-Input-Octets', '0')|int + record.get('Acct-Input-Gigawords', '0')|int * 4294967296) %}
+                                {% set output = (record.get('Acct-Output-Octets', '0')|int + record.get('Acct-Output-Gigawords', '0')|int * 4294967296) %}
+                                {% set total = input + output %}
+                                {% if total > 1073741824 %}
+                                    {{ '%.2f GB'|format(total / 1073741824) }}
+                                {% elif total > 1048576 %}
+                                    {{ '%.2f MB'|format(total / 1048576) }}
+                                {% elif total > 1024 %}
+                                    {{ '%.2f KB'|format(total / 1024) }}
+                                {% else %}
+                                    {{ total }} B
+                                {% endif %}
+                            {% else %}
+                                -
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr id="emptyRow">
+                        <td colspan="8" class="empty-state">No activity records found</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
     </div>
 </div>
-{% endif %}
-
-<table class="users-table activity-table">
-    <thead>
-        <tr>
-            <th>Time</th>
-            <th>User</th>
-            <th>Status</th>
-            <th>VPN IP</th>
-            <th>Source IP</th>
-            <th>Gateway</th>
-            <th>Duration</th>
-            <th>Data</th>
-        </tr>
-    </thead>
-    <tbody>
-        {% for record in records %}
-        <tr class="{% if record.get('Acct-Status-Type') == 'Start' %}row-start{% elif record.get('Acct-Status-Type') == 'Stop' %}row-stop{% endif %}">
-            <td class="timestamp">{{ record.get('_timestamp_str', '-') }}</td>
-            <td class="username">{{ record.get('User-Name', '-') }}</td>
-            <td>
-                {% set status = record.get('Acct-Status-Type', '') %}
-                <span class="status-badge {% if status == 'Start' %}status-enabled{% elif status == 'Stop' %}status-disabled{% else %}status-other{% endif %}">
-                    {{ status or '-' }}
-                </span>
-            </td>
-            <td>{{ record.get('Framed-IP-Address', '-') }}</td>
-            <td>{{ record.get('Calling-Station-Id', '-') }}</td>
-            <td class="gateway">{{ record.get('NAS-Identifier', record.get('NAS-IP-Address', '-'))|truncate(25) }}</td>
-            <td>
-                {% if record.get('Acct-Session-Time') %}
-                    {% set secs = record.get('Acct-Session-Time')|int %}
-                    {% set hours = secs // 3600 %}
-                    {% set mins = (secs % 3600) // 60 %}
-                    {% set secs = secs % 60 %}
-                    {{ '%02d:%02d:%02d'|format(hours, mins, secs) }}
-                {% else %}
-                    -
-                {% endif %}
-            </td>
-            <td>
-                {% if record.get('Acct-Input-Octets') or record.get('Acct-Output-Octets') %}
-                    {% set input = (record.get('Acct-Input-Octets', '0')|int + record.get('Acct-Input-Gigawords', '0')|int * 4294967296) %}
-                    {% set output = (record.get('Acct-Output-Octets', '0')|int + record.get('Acct-Output-Gigawords', '0')|int * 4294967296) %}
-                    {% set total = input + output %}
-                    {% if total > 1073741824 %}
-                        {{ '%.2f GB'|format(total / 1073741824) }}
-                    {% elif total > 1048576 %}
-                        {{ '%.2f MB'|format(total / 1048576) }}
-                    {% elif total > 1024 %}
-                        {{ '%.2f KB'|format(total / 1024) }}
-                    {% else %}
-                        {{ total }} B
-                    {% endif %}
-                {% else %}
-                    -
-                {% endif %}
-            </td>
-        </tr>
-        {% else %}
-        <tr>
-            <td colspan="8" class="empty-state">No activity records found</td>
-        </tr>
-        {% endfor %}
-    </tbody>
-</table>
 {% endblock %}
 
 {% block scripts %}
 <script>
+let refreshInterval = null;
+let countdownInterval = null;
+let countdown = 30;
+let lastRecordTime = null;
+
+// ============================================
+// Server Status
+// ============================================
 async function refreshStatus() {
     const statusEl = document.getElementById('serverStatus');
     statusEl.innerHTML = '<span class="status-indicator loading"></span><span>Checking...</span>';
@@ -174,10 +231,248 @@ async function refreshStatus() {
     }
 }
 
-// Check status on page load
-refreshStatus();
+// ============================================
+// Auto-Refresh
+// ============================================
+function startAutoRefresh() {
+    countdown = 30;
+    updateCountdown();
 
-// Auto-refresh every 30 seconds
+    countdownInterval = setInterval(() => {
+        countdown--;
+        updateCountdown();
+
+        if (countdown <= 0) {
+            refreshActivity();
+            countdown = 30;
+        }
+    }, 1000);
+}
+
+function updateCountdown() {
+    const el = document.getElementById('refreshCountdown');
+    if (el) el.textContent = countdown;
+}
+
+async function refreshActivity() {
+    const liveBadge = document.getElementById('liveBadge');
+    liveBadge.classList.add('live-badge--loading');
+
+    try {
+        const params = new URLSearchParams(window.location.search);
+        const response = await fetch('/api/activity?' + params.toString());
+        const data = await response.json();
+
+        if (response.ok) {
+            updateActivityTable(data.records);
+            updateStats(data.records);
+        }
+    } catch (err) {
+        console.error('Failed to refresh activity:', err);
+    }
+
+    liveBadge.classList.remove('live-badge--loading');
+    countdown = 30;
+}
+
+function updateActivityTable(records) {
+    const tbody = document.getElementById('activityBody');
+    const existingRows = tbody.querySelectorAll('tr[data-timestamp]');
+    const existingTimes = new Set();
+
+    existingRows.forEach(row => {
+        existingTimes.add(row.dataset.timestamp);
+    });
+
+    // Check for new records
+    let newRecords = [];
+    records.forEach(record => {
+        const timestamp = record._timestamp_str;
+        if (!existingTimes.has(timestamp)) {
+            newRecords.push(record);
+        }
+    });
+
+    // Remove empty row if exists
+    const emptyRow = document.getElementById('emptyRow');
+    if (emptyRow && records.length > 0) {
+        emptyRow.remove();
+    }
+
+    // Add new records at the top
+    newRecords.forEach(record => {
+        const row = createActivityRow(record);
+        row.classList.add('activity-item--new');
+        tbody.insertBefore(row, tbody.firstChild);
+
+        // Remove animation class after animation completes
+        setTimeout(() => row.classList.remove('activity-item--new'), 3000);
+    });
+
+    if (newRecords.length > 0) {
+        Toast.info(`${newRecords.length} new activity record(s)`);
+    }
+}
+
+function createActivityRow(record) {
+    const status = record['Acct-Status-Type'] || '';
+    const row = document.createElement('tr');
+    row.className = status === 'Start' ? 'row--start' : status === 'Stop' ? 'row--stop' : '';
+    row.dataset.timestamp = record._timestamp_str || '';
+
+    // Calculate duration
+    let duration = '-';
+    if (record['Acct-Session-Time']) {
+        const secs = parseInt(record['Acct-Session-Time']);
+        const hours = Math.floor(secs / 3600);
+        const mins = Math.floor((secs % 3600) / 60);
+        const s = secs % 60;
+        duration = `${String(hours).padStart(2, '0')}:${String(mins).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    // Calculate data
+    let dataStr = '-';
+    const input = parseInt(record['Acct-Input-Octets'] || 0) + parseInt(record['Acct-Input-Gigawords'] || 0) * 4294967296;
+    const output = parseInt(record['Acct-Output-Octets'] || 0) + parseInt(record['Acct-Output-Gigawords'] || 0) * 4294967296;
+    const total = input + output;
+    if (total > 0) {
+        if (total > 1073741824) dataStr = (total / 1073741824).toFixed(2) + ' GB';
+        else if (total > 1048576) dataStr = (total / 1048576).toFixed(2) + ' MB';
+        else if (total > 1024) dataStr = (total / 1024).toFixed(2) + ' KB';
+        else dataStr = total + ' B';
+    }
+
+    const statusBadge = status === 'Start' ? 'badge--success' :
+                        status === 'Stop' ? 'badge--danger' : 'badge--warning';
+
+    row.innerHTML = `
+        <td class="font-mono" style="font-size: 0.75rem; white-space: nowrap;">${record._timestamp_str || '-'}</td>
+        <td class="username">${record['User-Name'] || '-'}</td>
+        <td><span class="badge ${statusBadge}">${status || '-'}</span></td>
+        <td>${record['Framed-IP-Address'] || '-'}</td>
+        <td>${record['Calling-Station-Id'] || '-'}</td>
+        <td class="text-muted" style="max-width: 150px; overflow: hidden; text-overflow: ellipsis;">${(record['NAS-Identifier'] || record['NAS-IP-Address'] || '-').substring(0, 25)}</td>
+        <td>${duration}</td>
+        <td>${dataStr}</td>
+    `;
+
+    return row;
+}
+
+function updateStats(records) {
+    const activeCount = records.filter(r => r['Acct-Status-Type'] === 'Start').length;
+    const connectCount = records.filter(r => r['Acct-Status-Type'] === 'Start').length;
+    const disconnectCount = records.filter(r => r['Acct-Status-Type'] === 'Stop').length;
+
+    document.getElementById('recordCount').textContent = records.length;
+    document.getElementById('connectCount').textContent = connectCount;
+    document.getElementById('disconnectCount').textContent = disconnectCount;
+}
+
+// ============================================
+// Export to CSV
+// ============================================
+function exportActivity() {
+    const table = document.getElementById('activityTable');
+    const rows = table.querySelectorAll('tbody tr[data-timestamp]');
+
+    if (rows.length === 0) {
+        Toast.warning('No data to export');
+        return;
+    }
+
+    let csv = 'Time,User,Status,VPN IP,Source IP,Gateway,Duration,Data\n';
+
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        const rowData = Array.from(cells).map(cell => {
+            let text = cell.textContent.trim();
+            // Escape quotes and wrap in quotes if contains comma
+            if (text.includes(',') || text.includes('"')) {
+                text = '"' + text.replace(/"/g, '""') + '"';
+            }
+            return text;
+        });
+        csv += rowData.join(',') + '\n';
+    });
+
+    // Download
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'radius_activity_' + new Date().toISOString().split('T')[0] + '.csv';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+
+    Toast.success('Activity exported to CSV');
+}
+
+// ============================================
+// SSE Live Updates
+// ============================================
+LiveUpdates.on('session_start', (session) => {
+    Toast.success(`${session.username} connected`);
+    refreshActivity();
+});
+
+LiveUpdates.on('session_stop', (data) => {
+    Toast.info('Session ended');
+    refreshActivity();
+});
+
+LiveUpdates.on('activity_update', (data) => {
+    refreshActivity();
+});
+
+// ============================================
+// Initialize
+// ============================================
+refreshStatus();
+startAutoRefresh();
 setInterval(refreshStatus, 30000);
 </script>
+
+<style>
+.stat--clickable {
+    cursor: pointer;
+    transition: transform var(--transition-fast);
+}
+
+.stat--clickable:hover {
+    transform: translateY(-2px);
+}
+
+.live-badge {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-1) var(--space-3);
+    background: var(--danger);
+    color: white;
+    font-size: 0.625rem;
+    font-weight: 700;
+    border-radius: var(--radius-full);
+    letter-spacing: 0.05em;
+}
+
+.live-dot {
+    width: 6px;
+    height: 6px;
+    background: white;
+    border-radius: 50%;
+    animation: pulse 2s ease-in-out infinite;
+}
+
+.live-badge--loading .live-dot {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+</style>
 {% endblock %}

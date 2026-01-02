@@ -12,10 +12,10 @@
         <div class="form-group">
             <label for="username">Username</label>
             {% if action == 'edit' %}
-                <input type="text" id="username" name="username"
-                       value="{{ user.username }}" readonly class="readonly">
+                <input type="text" id="username" name="username" class="form-input form-input--readonly"
+                       value="{{ user.username }}" readonly>
             {% else %}
-                <input type="text" id="username" name="username"
+                <input type="text" id="username" name="username" class="form-input"
                        required autofocus placeholder="e.g., BW-0020 or ADM-NewAdmin">
             {% endif %}
         </div>
@@ -27,24 +27,24 @@
                     <span class="label-hint">(leave blank to keep current)</span>
                 {% endif %}
             </label>
-            <div class="password-input">
-                <input type="password" id="password" name="password"
+            <div class="password-wrapper">
+                <input type="password" id="password" name="password" class="form-input"
                        {% if action == 'new' %}required{% endif %}
                        placeholder="{% if action == 'edit' %}Enter new password{% else %}Password{% endif %}">
-                <button type="button" class="btn-show-password" onclick="togglePassword()">Show</button>
+                <button type="button" class="btn btn--secondary" onclick="togglePassword()">Show</button>
             </div>
         </div>
 
         <div class="form-group">
             <label for="comment">Comment</label>
-            <input type="text" id="comment" name="comment"
+            <input type="text" id="comment" name="comment" class="form-input"
                    value="{{ user.comment if user else '' }}"
                    placeholder="e.g., User name or description">
         </div>
 
         <div class="form-actions">
-            <a href="{{ url_for('main.users') }}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">
+            <a href="{{ url_for('main.users') }}" class="btn btn--secondary">Cancel</a>
+            <button type="submit" class="btn btn--primary">
                 {{ 'Save Changes' if action == 'edit' else 'Create User' }}
             </button>
         </div>
@@ -56,7 +56,7 @@
 <script>
 function togglePassword() {
     const input = document.getElementById('password');
-    const btn = document.querySelector('.btn-show-password');
+    const btn = event.target;
 
     if (input.type === 'password') {
         input.type = 'text';

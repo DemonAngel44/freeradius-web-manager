@@ -12,15 +12,15 @@
         <div class="form-group">
             <label for="name">Client Name</label>
             {% if action == 'edit' %}
-            <input type="text" id="name" name="name" value="{{ client.name }}" class="readonly" readonly>
+            <input type="text" id="name" name="name" value="{{ client.name }}" class="form-input form-input--readonly" readonly>
             {% else %}
-            <input type="text" id="name" name="name" placeholder="e.g., Router1" required>
+            <input type="text" id="name" name="name" class="form-input" placeholder="e.g., Router1" required>
             {% endif %}
         </div>
 
         <div class="form-group">
             <label for="ipaddr">IP Address / Network</label>
-            <input type="text" id="ipaddr" name="ipaddr"
+            <input type="text" id="ipaddr" name="ipaddr" class="form-input"
                    value="{{ client.ipaddr if client else '' }}"
                    placeholder="e.g., 10.0.0.1 or 10.0.0.0/24" required>
         </div>
@@ -32,24 +32,24 @@
                 <span class="label-hint">(leave blank to keep current)</span>
                 {% endif %}
             </label>
-            <div class="password-input">
-                <input type="password" id="secret" name="secret"
+            <div class="password-wrapper">
+                <input type="password" id="secret" name="secret" class="form-input"
                        placeholder="{% if action == 'edit' %}Enter new secret or leave blank{% else %}Enter shared secret{% endif %}"
                        {% if action != 'edit' %}required{% endif %}>
-                <button type="button" class="btn-show-password" onclick="togglePassword('secret')">Show</button>
+                <button type="button" class="btn btn--secondary" onclick="togglePassword('secret')">Show</button>
             </div>
         </div>
 
         <div class="form-group">
             <label for="shortname">Short Name <span class="label-hint">(optional)</span></label>
-            <input type="text" id="shortname" name="shortname"
+            <input type="text" id="shortname" name="shortname" class="form-input"
                    value="{{ client.shortname if client else '' }}"
                    placeholder="e.g., rtr1">
         </div>
 
         <div class="form-group">
             <label for="nastype">NAS Type <span class="label-hint">(optional)</span></label>
-            <select id="nastype" name="nastype">
+            <select id="nastype" name="nastype" class="form-select">
                 <option value="">-- Select Type --</option>
                 <option value="cisco" {% if client and client.nastype == 'cisco' %}selected{% endif %}>Cisco</option>
                 <option value="mikrotik" {% if client and client.nastype == 'mikrotik' %}selected{% endif %}>MikroTik</option>
@@ -60,14 +60,14 @@
 
         <div class="form-group">
             <label for="comment">Comment <span class="label-hint">(optional)</span></label>
-            <input type="text" id="comment" name="comment"
+            <input type="text" id="comment" name="comment" class="form-input"
                    value="{{ client.comment if client else '' }}"
                    placeholder="Description of this client">
         </div>
 
         <div class="form-actions">
-            <a href="{{ url_for('main.clients') }}" class="btn btn-secondary">Cancel</a>
-            <button type="submit" class="btn btn-primary">
+            <a href="{{ url_for('main.clients') }}" class="btn btn--secondary">Cancel</a>
+            <button type="submit" class="btn btn--primary">
                 {{ 'Update' if action == 'edit' else 'Create' }} Client
             </button>
         </div>
@@ -79,7 +79,7 @@
 <script>
 function togglePassword(fieldId) {
     const field = document.getElementById(fieldId);
-    const btn = field.nextElementSibling;
+    const btn = event.target;
     if (field.type === 'password') {
         field.type = 'text';
         btn.textContent = 'Hide';
