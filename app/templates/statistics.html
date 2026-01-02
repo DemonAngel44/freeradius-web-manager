@@ -1,0 +1,99 @@
+{% extends "base.html" %}
+
+{% block title %}Statistics - FreeRADIUS Web Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Authentication Statistics</h1>
+    <div class="header-actions">
+        <button class="btn btn-secondary" onclick="window.location.reload()">Refresh</button>
+    </div>
+</div>
+
+<div class="stats-bar">
+    <div class="stat">
+        <span class="stat-value stat-warning">{{ stats.active_sessions }}</span>
+        <span class="stat-label">Active Sessions</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value stat-enabled">{{ stats.connections }}</span>
+        <span class="stat-label">Connections</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value stat-disabled">{{ stats.disconnections }}</span>
+        <span class="stat-label">Disconnections</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value">{{ stats.unique_users }}</span>
+        <span class="stat-label">Unique Users</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value">{{ stats.total_records }}</span>
+        <span class="stat-label">Total Records</span>
+    </div>
+</div>
+
+<div class="stats-grid">
+    <div class="stats-panel">
+        <h3>User Activity</h3>
+        <table class="stats-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>Connections</th>
+                    <th>Disconnections</th>
+                    <th>Data Usage</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for user, data in user_stats.items()|sort(attribute='1.connections', reverse=true) %}
+                <tr>
+                    <td class="username">{{ user }}</td>
+                    <td>{{ data.connections }}</td>
+                    <td>{{ data.disconnections }}</td>
+                    <td>
+                        {% if data.data_bytes > 1073741824 %}
+                            {{ '%.2f GB'|format(data.data_bytes / 1073741824) }}
+                        {% elif data.data_bytes > 1048576 %}
+                            {{ '%.2f MB'|format(data.data_bytes / 1048576) }}
+                        {% elif data.data_bytes > 1024 %}
+                            {{ '%.2f KB'|format(data.data_bytes / 1024) }}
+                        {% else %}
+                            {{ data.data_bytes }} B
+                        {% endif %}
+                    </td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="4" class="empty-state">No user activity recorded</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+    <div class="stats-panel">
+        <h3>Gateway Activity</h3>
+        <table class="stats-table">
+            <thead>
+                <tr>
+                    <th>Gateway</th>
+                    <th>Connections</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for nas, data in nas_stats.items()|sort(attribute='1.connections', reverse=true) %}
+                <tr>
+                    <td>{{ nas }}</td>
+                    <td>{{ data.connections }}</td>
+                </tr>
+                {% else %}
+                <tr>
+                    <td colspan="2" class="empty-state">No gateway activity recorded</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

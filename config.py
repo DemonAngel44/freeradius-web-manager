@@ -15,6 +15,9 @@ class Config:
     # FreeRADIUS users file path
     USERS_FILE = os.environ.get('USERS_FILE', '/etc/raddb/mods-config/files/authorize')
 
+    # FreeRADIUS clients file path
+    CLIENTS_FILE = os.environ.get('CLIENTS_FILE', '/etc/raddb/clients.conf')
+
     # Only users with this prefix can log in as admin (empty = any authenticated user)
     ADMIN_GROUP_PREFIX = os.environ.get('ADMIN_GROUP_PREFIX', '')
 

@@ -1,0 +1,221 @@
+{% extends "base.html" %}
+
+{% block title %}Settings - FreeRADIUS Web Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>Settings</h1>
+    <div class="header-actions">
+        <button class="btn btn-primary" onclick="reloadRadius()">Reload RADIUS</button>
+    </div>
+</div>
+
+<div class="server-status" id="serverStatus">
+    <span class="status-indicator loading"></span>
+    <span>Checking server status...</span>
+</div>
+
+<div class="settings-grid">
+    <div class="settings-panel">
+        <h3>RADIUS Server</h3>
+        <div class="settings-list">
+            <div class="setting-item">
+                <span class="setting-label">Server Address</span>
+                <span class="setting-value">{{ config.radius_server }}</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Auth Port</span>
+                <span class="setting-value">{{ config.radius_port }}</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Container Name</span>
+                <span class="setting-value">{{ config.freeradius_container }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-panel">
+        <h3>File Paths</h3>
+        <div class="settings-list">
+            <div class="setting-item">
+                <span class="setting-label">Users File</span>
+                <span class="setting-value path">{{ config.users_file }}</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Clients File</span>
+                <span class="setting-value path">{{ config.clients_file }}</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Accounting Logs</span>
+                <span class="setting-value path">{{ config.radacct_dir }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-panel">
+        <h3>Access Control</h3>
+        <div class="settings-list">
+            <div class="setting-item">
+                <span class="setting-label">Admin Prefix</span>
+                <span class="setting-value">{{ config.admin_group_prefix or '(Any user can login)' }}</span>
+            </div>
+            <div class="setting-item">
+                <span class="setting-label">Current User</span>
+                <span class="setting-value">{{ session.username }}</span>
+            </div>
+        </div>
+    </div>
+
+    <div class="settings-panel">
+        <h3>Actions</h3>
+        <div class="settings-actions">
+            <button class="btn btn-secondary" onclick="testRadius()">Test RADIUS</button>
+            <button class="btn btn-primary" onclick="reloadRadius()">Reload Configuration</button>
+        </div>
+        <div id="actionResult" class="action-result"></div>
+    </div>
+</div>
+
+<div class="settings-panel full-width">
+    <h3>Environment Configuration</h3>
+    <p class="settings-note">
+        Settings are configured via environment variables or .env file.
+        To change settings, update the environment and restart the container.
+    </p>
+    <table class="settings-table">
+        <thead>
+            <tr>
+                <th>Variable</th>
+                <th>Description</th>
+                <th>Current Value</th>
+            </tr>
+        </thead>
+        <tbody>
+            <tr>
+                <td><code>RADIUS_SERVER</code></td>
+                <td>RADIUS server hostname for authentication</td>
+                <td>{{ config.radius_server }}</td>
+            </tr>
+            <tr>
+                <td><code>RADIUS_PORT</code></td>
+                <td>RADIUS authentication port</td>
+                <td>{{ config.radius_port }}</td>
+            </tr>
+            <tr>
+                <td><code>RADIUS_SECRET</code></td>
+                <td>Shared secret for RADIUS authentication</td>
+                <td>********</td>
+            </tr>
+            <tr>
+                <td><code>USERS_FILE</code></td>
+                <td>Path to FreeRADIUS users/authorize file</td>
+                <td>{{ config.users_file }}</td>
+            </tr>
+            <tr>
+                <td><code>CLIENTS_FILE</code></td>
+                <td>Path to FreeRADIUS clients.conf</td>
+                <td>{{ config.clients_file }}</td>
+            </tr>
+            <tr>
+                <td><code>RADACCT_DIR</code></td>
+                <td>Path to radacct accounting logs</td>
+                <td>{{ config.radacct_dir }}</td>
+            </tr>
+            <tr>
+                <td><code>FREERADIUS_CONTAINER</code></td>
+                <td>Docker container name for FreeRADIUS</td>
+                <td>{{ config.freeradius_container }}</td>
+            </tr>
+            <tr>
+                <td><code>ADMIN_GROUP_PREFIX</code></td>
+                <td>Username prefix required for admin access</td>
+                <td>{{ config.admin_group_prefix or '(not set)' }}</td>
+            </tr>
+        </tbody>
+    </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function refreshStatus() {
+    const statusEl = document.getElementById('serverStatus');
+    statusEl.innerHTML = '<span class="status-indicator loading"></span><span>Checking...</span>';
+
+    try {
+        const response = await fetch('/api/status');
+        const data = await response.json();
+
+        if (data.running) {
+            statusEl.innerHTML = `
+                <span class="status-indicator online"></span>
+                <span>FreeRADIUS: <strong>Running</strong></span>
+                <span class="status-uptime">Started: ${new Date(data.started_at).toLocaleString()}</span>
+            `;
+        } else {
+            statusEl.innerHTML = `
+                <span class="status-indicator offline"></span>
+                <span>FreeRADIUS: <strong>${data.status || 'Offline'}</strong></span>
+            `;
+        }
+    } catch (err) {
+        statusEl.innerHTML = `
+            <span class="status-indicator offline"></span>
+            <span>Status: Unknown (${err.message})</span>
+        `;
+    }
+}
+
+async function reloadRadius() {
+    const resultEl = document.getElementById('actionResult');
+    resultEl.className = 'action-result loading';
+    resultEl.textContent = 'Reloading configuration...';
+
+    try {
+        const response = await fetch('/api/reload', { method: 'POST' });
+        const data = await response.json();
+
+        if (response.ok) {
+            resultEl.className = 'action-result success';
+            resultEl.textContent = data.message;
+        } else {
+            resultEl.className = 'action-result error';
+            resultEl.textContent = data.error || 'Failed to reload';
+        }
+    } catch (err) {
+        resultEl.className = 'action-result error';
+        resultEl.textContent = 'Error: ' + err.message;
+    }
+
+    setTimeout(() => { resultEl.textContent = ''; }, 5000);
+}
+
+async function testRadius() {
+    const resultEl = document.getElementById('actionResult');
+    resultEl.className = 'action-result loading';
+    resultEl.textContent = 'Testing RADIUS connection...';
+
+    try {
+        const response = await fetch('/api/health');
+        const data = await response.json();
+
+        if (response.ok) {
+            resultEl.className = 'action-result success';
+            resultEl.textContent = 'Web Manager is healthy. RADIUS server connectivity depends on client configuration.';
+        } else {
+            resultEl.className = 'action-result error';
+            resultEl.textContent = 'Health check failed';
+        }
+    } catch (err) {
+        resultEl.className = 'action-result error';
+        resultEl.textContent = 'Error: ' + err.message;
+    }
+
+    setTimeout(() => { resultEl.textContent = ''; }, 5000);
+}
+
+// Check status on page load
+refreshStatus();
+setInterval(refreshStatus, 30000);
+</script>
+{% endblock %}

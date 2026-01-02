@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+
+{% block title %}RADIUS Clients - FreeRADIUS Web Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>RADIUS Clients</h1>
+    <div class="header-actions">
+        <a href="{{ url_for('main.new_client') }}" class="btn btn-primary">Add Client</a>
+    </div>
+</div>
+
+<div class="stats-bar">
+    <div class="stat">
+        <span class="stat-value">{{ clients|length }}</span>
+        <span class="stat-label">Total Clients</span>
+    </div>
+</div>
+
+<table class="users-table">
+    <thead>
+        <tr>
+            <th>Name</th>
+            <th>IP Address</th>
+            <th>Shortname</th>
+            <th>Type</th>
+            <th>Comment</th>
+            <th>Actions</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for client in clients %}
+        <tr>
+            <td class="username">{{ client.name }}</td>
+            <td><code>{{ client.ipaddr }}</code></td>
+            <td>{{ client.shortname or '-' }}</td>
+            <td>{{ client.nastype or '-' }}</td>
+            <td class="comment">{{ client.comment or '-' }}</td>
+            <td class="actions">
+                <a href="{{ url_for('main.edit_client', name=client.name) }}" class="btn btn-sm btn-edit">Edit</a>
+                <button class="btn btn-sm btn-delete" onclick="deleteClient('{{ client.name }}')">Delete</button>
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="6" class="empty-state">No RADIUS clients configured</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function deleteClient(name) {
+    if (!confirm(`Are you sure you want to delete client "${name}"?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/api/clients/${encodeURIComponent(name)}`, {
+            method: 'DELETE'
+        });
+
+        if (response.ok) {
+            window.location.reload();
+        } else {
+            const data = await response.json();
+            alert(data.error || 'Failed to delete client');
+        }
+    } catch (err) {
+        alert('Error: ' + err.message);
+    }
+}
+</script>
+{% endblock %}

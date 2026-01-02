@@ -13,6 +13,7 @@ from app.auth import (
     is_setup_complete, mark_setup_complete, setup_required
 )
 from app.radius_file import RadiusFileManager, RadiusUser
+from app.radius_clients import RadiusClientsManager, RadiusClient
 
 main_bp = Blueprint('main', __name__)
 api_bp = Blueprint('api', __name__)
@@ -21,6 +22,11 @@ api_bp = Blueprint('api', __name__)
 def get_file_manager():
     """Get the RadiusFileManager instance."""
     return RadiusFileManager(current_app.config['USERS_FILE'])
+
+
+def get_clients_manager():
+    """Get the RadiusClientsManager instance."""
+    return RadiusClientsManager(current_app.config['CLIENTS_FILE'])
 
 
 # ============== Web Views ==============
@@ -599,4 +605,314 @@ def api_activity():
     return jsonify({
         'records': records,
         'total': len(records)
+    })
+
+
+# ============== RADIUS Clients Views ==============
+
+@main_bp.route('/clients')
+@setup_required
+@login_required
+def clients():
+    """RADIUS clients list page."""
+    manager = get_clients_manager()
+    clients_list = manager.parse_clients()
+    return render_template('clients.html', clients=clients_list)
+
+
+@main_bp.route('/clients/new', methods=['GET', 'POST'])
+@setup_required
+@login_required
+def new_client():
+    """Create new RADIUS client form."""
+    if request.method == 'POST':
+        name = request.form.get('name', '').strip()
+        ipaddr = request.form.get('ipaddr', '').strip()
+        secret = request.form.get('secret', '').strip()
+        shortname = request.form.get('shortname', '').strip()
+        nastype = request.form.get('nastype', '').strip()
+        comment = request.form.get('comment', '').strip()
+
+        if not name or not ipaddr or not secret:
+            flash('Name, IP address, and secret are required', 'error')
+            return render_template('client_form.html', client=None, action='new')
+
+        manager = get_clients_manager()
+        client = RadiusClient(
+            name=name,
+            ipaddr=ipaddr,
+            secret=secret,
+            shortname=shortname,
+            nastype=nastype,
+            comment=comment
+        )
+
+        if manager.add_client(client, get_current_user()):
+            flash(f'Client {name} created successfully', 'success')
+            return redirect(url_for('main.clients'))
+        else:
+            flash(f'Client {name} already exists', 'error')
+
+    return render_template('client_form.html', client=None, action='new')
+
+
+@main_bp.route('/clients/<name>/edit', methods=['GET', 'POST'])
+@setup_required
+@login_required
+def edit_client(name):
+    """Edit RADIUS client form."""
+    manager = get_clients_manager()
+    client = manager.get_client(name)
+
+    if not client:
+        flash(f'Client {name} not found', 'error')
+        return redirect(url_for('main.clients'))
+
+    if request.method == 'POST':
+        client.ipaddr = request.form.get('ipaddr', '').strip()
+        new_secret = request.form.get('secret', '').strip()
+        if new_secret:
+            client.secret = new_secret
+        client.shortname = request.form.get('shortname', '').strip()
+        client.nastype = request.form.get('nastype', '').strip()
+        client.comment = request.form.get('comment', '').strip()
+
+        if manager.update_client(name, client, get_current_user()):
+            flash(f'Client {name} updated successfully', 'success')
+            return redirect(url_for('main.clients'))
+        else:
+            flash(f'Failed to update client {name}', 'error')
+
+    return render_template('client_form.html', client=client, action='edit')
+
+
+# ============== Active Users View ==============
+
+@main_bp.route('/active')
+@setup_required
+@login_required
+def active_users():
+    """Active users page - shows currently connected users."""
+    log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
+    all_records = get_activity_records(log_dir, limit=500)
+    active_sessions = get_active_sessions(all_records)
+
+    # Get client info for NAS identification
+    clients_manager = get_clients_manager()
+    clients = {c.ipaddr: c.name for c in clients_manager.parse_clients()}
+
+    # Enrich active sessions with client names
+    for session in active_sessions:
+        nas_ip = session.get('NAS-IP-Address', '')
+        session['_nas_name'] = clients.get(nas_ip, session.get('NAS-Identifier', nas_ip))
+
+    return render_template('active_users.html',
+                           sessions=active_sessions,
+                           total=len(active_sessions))
+
+
+# ============== Statistics View ==============
+
+@main_bp.route('/statistics')
+@setup_required
+@login_required
+def statistics():
+    """Authentication statistics page."""
+    log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
+    all_records = get_activity_records(log_dir, limit=1000)
+
+    # Calculate statistics
+    stats = {
+        'total_records': len(all_records),
+        'connections': len([r for r in all_records if r.get('Acct-Status-Type') == 'Start']),
+        'disconnections': len([r for r in all_records if r.get('Acct-Status-Type') == 'Stop']),
+        'active_sessions': len(get_active_sessions(all_records)),
+        'unique_users': len(set(r.get('User-Name', '') for r in all_records if r.get('User-Name'))),
+    }
+
+    # User activity breakdown
+    user_stats = {}
+    for record in all_records:
+        user = record.get('User-Name', '')
+        if not user:
+            continue
+        if user not in user_stats:
+            user_stats[user] = {'connections': 0, 'disconnections': 0, 'data_bytes': 0}
+
+        if record.get('Acct-Status-Type') == 'Start':
+            user_stats[user]['connections'] += 1
+        elif record.get('Acct-Status-Type') == 'Stop':
+            user_stats[user]['disconnections'] += 1
+            # Add data usage
+            input_bytes = int(record.get('Acct-Input-Octets', 0) or 0)
+            output_bytes = int(record.get('Acct-Output-Octets', 0) or 0)
+            input_giga = int(record.get('Acct-Input-Gigawords', 0) or 0) * 4294967296
+            output_giga = int(record.get('Acct-Output-Gigawords', 0) or 0) * 4294967296
+            user_stats[user]['data_bytes'] += input_bytes + output_bytes + input_giga + output_giga
+
+    # NAS activity breakdown
+    nas_stats = {}
+    for record in all_records:
+        nas = record.get('NAS-Identifier', record.get('NAS-IP-Address', 'Unknown'))
+        if nas not in nas_stats:
+            nas_stats[nas] = {'connections': 0}
+        if record.get('Acct-Status-Type') == 'Start':
+            nas_stats[nas]['connections'] += 1
+
+    return render_template('statistics.html',
+                           stats=stats,
+                           user_stats=user_stats,
+                           nas_stats=nas_stats)
+
+
+# ============== Settings View ==============
+
+@main_bp.route('/settings')
+@setup_required
+@login_required
+def settings():
+    """Settings page."""
+    config = {
+        'radius_server': current_app.config.get('RADIUS_SERVER', 'localhost'),
+        'radius_port': current_app.config.get('RADIUS_PORT', 1812),
+        'users_file': current_app.config.get('USERS_FILE', ''),
+        'clients_file': current_app.config.get('CLIENTS_FILE', ''),
+        'radacct_dir': current_app.config.get('RADACCT_DIR', ''),
+        'freeradius_container': current_app.config.get('FREERADIUS_CONTAINER', 'freeradius'),
+        'admin_group_prefix': current_app.config.get('ADMIN_GROUP_PREFIX', ''),
+    }
+    return render_template('settings.html', config=config)
+
+
+# ============== RADIUS Clients API ==============
+
+@api_bp.route('/clients', methods=['GET'])
+@login_required
+def api_list_clients():
+    """List all RADIUS clients."""
+    manager = get_clients_manager()
+    clients = manager.parse_clients()
+    return jsonify({
+        'clients': [c.to_dict() for c in clients],
+        'total': len(clients)
+    })
+
+
+@api_bp.route('/clients/<name>', methods=['GET'])
+@login_required
+def api_get_client(name):
+    """Get a specific RADIUS client."""
+    manager = get_clients_manager()
+    client = manager.get_client(name)
+
+    if client:
+        return jsonify(client.to_dict())
+    return jsonify({'error': 'Client not found'}), 404
+
+
+@api_bp.route('/clients', methods=['POST'])
+@login_required
+def api_create_client():
+    """Create a new RADIUS client."""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    name = data.get('name', '').strip()
+    ipaddr = data.get('ipaddr', '').strip()
+    secret = data.get('secret', '').strip()
+
+    if not name or not ipaddr or not secret:
+        return jsonify({'error': 'Name, ipaddr, and secret are required'}), 400
+
+    manager = get_clients_manager()
+    client = RadiusClient(
+        name=name,
+        ipaddr=ipaddr,
+        secret=secret,
+        shortname=data.get('shortname', '').strip(),
+        nastype=data.get('nastype', '').strip(),
+        comment=data.get('comment', '').strip()
+    )
+
+    if manager.add_client(client, get_current_user()):
+        return jsonify({'message': f'Client {name} created', 'client': client.to_dict()}), 201
+    return jsonify({'error': f'Client {name} already exists'}), 409
+
+
+@api_bp.route('/clients/<name>', methods=['PUT'])
+@login_required
+def api_update_client(name):
+    """Update an existing RADIUS client."""
+    data = request.get_json()
+
+    if not data:
+        return jsonify({'error': 'No data provided'}), 400
+
+    manager = get_clients_manager()
+    client = manager.get_client(name)
+
+    if not client:
+        return jsonify({'error': 'Client not found'}), 404
+
+    if 'ipaddr' in data:
+        client.ipaddr = data['ipaddr']
+    if 'secret' in data and data['secret']:
+        client.secret = data['secret']
+    if 'shortname' in data:
+        client.shortname = data['shortname']
+    if 'nastype' in data:
+        client.nastype = data['nastype']
+    if 'comment' in data:
+        client.comment = data['comment']
+
+    if manager.update_client(name, client, get_current_user()):
+        return jsonify({'message': f'Client {name} updated', 'client': client.to_dict()})
+    return jsonify({'error': 'Failed to update client'}), 500
+
+
+@api_bp.route('/clients/<name>', methods=['DELETE'])
+@login_required
+def api_delete_client(name):
+    """Delete a RADIUS client."""
+    manager = get_clients_manager()
+
+    if manager.delete_client(name, get_current_user()):
+        return jsonify({'message': f'Client {name} deleted'})
+    return jsonify({'error': 'Client not found'}), 404
+
+
+# ============== Session Management API ==============
+
+@api_bp.route('/sessions/<session_id>/disconnect', methods=['POST'])
+@login_required
+def api_disconnect_session(session_id):
+    """Disconnect an active session (send CoA Disconnect-Request)."""
+    # This would require sending a RADIUS Disconnect-Request to the NAS
+    # For now, return a placeholder response
+    # TODO: Implement actual RADIUS CoA/Disconnect
+    return jsonify({
+        'message': 'Disconnect request sent',
+        'session_id': session_id,
+        'note': 'CoA not yet implemented - requires RADIUS Disconnect support on NAS'
+    })
+
+
+@api_bp.route('/active', methods=['GET'])
+@login_required
+def api_active_sessions():
+    """Get currently active sessions."""
+    log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
+    all_records = get_activity_records(log_dir, limit=500)
+    active_sessions = get_active_sessions(all_records)
+
+    # Convert timestamps for JSON
+    for session in active_sessions:
+        if session.get('_timestamp'):
+            session['_timestamp'] = session['_timestamp'].isoformat()
+
+    return jsonify({
+        'sessions': active_sessions,
+        'total': len(active_sessions)
     })

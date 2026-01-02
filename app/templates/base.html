@@ -12,7 +12,11 @@
         <div class="nav-brand">FreeRADIUS Web Manager</div>
         <div class="nav-links">
             <a href="{{ url_for('main.users') }}" class="nav-link">Users</a>
+            <a href="{{ url_for('main.clients') }}" class="nav-link">Clients</a>
+            <a href="{{ url_for('main.active_users') }}" class="nav-link">Active</a>
             <a href="{{ url_for('main.activity') }}" class="nav-link">Activity</a>
+            <a href="{{ url_for('main.statistics') }}" class="nav-link">Statistics</a>
+            <a href="{{ url_for('main.settings') }}" class="nav-link">Settings</a>
             <span class="nav-user">{{ session.username }}</span>
             <a href="{{ url_for('main.logout') }}" class="nav-link logout">Logout</a>
         </div>
