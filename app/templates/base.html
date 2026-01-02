@@ -3,13 +3,13 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}FreeRADIUS Manager{% endblock %}</title>
+    <title>{% block title %}FreeRADIUS Web Manager{% endblock %}</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
 </head>
 <body>
     {% if session.username %}
     <nav class="navbar">
-        <div class="nav-brand">FreeRADIUS Manager</div>
+        <div class="nav-brand">FreeRADIUS Web Manager</div>
         <div class="nav-links">
             <a href="{{ url_for('main.users') }}" class="nav-link">Users</a>
             <span class="nav-user">{{ session.username }}</span>
