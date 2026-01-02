@@ -24,5 +24,8 @@ class Config:
     # Docker container name for FreeRADIUS (for reload command)
     FREERADIUS_CONTAINER = os.environ.get('FREERADIUS_CONTAINER', 'freeradius')
 
+    # FreeRADIUS accounting log directory
+    RADACCT_DIR = os.environ.get('RADACCT_DIR', '/var/log/freeradius/radacct')
+
     # Session settings
     PERMANENT_SESSION_LIFETIME = 3600  # 1 hour

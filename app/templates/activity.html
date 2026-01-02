@@ -1,0 +1,109 @@
+{% extends "base.html" %}
+
+{% block title %}Activity - FreeRADIUS Web Manager{% endblock %}
+
+{% block content %}
+<div class="page-header">
+    <h1>VPN Activity</h1>
+</div>
+
+<div class="filter-bar">
+    <form method="GET" class="filter-form">
+        <select name="user" onchange="this.form.submit()">
+            <option value="">All Users</option>
+            {% for user in users %}
+            <option value="{{ user }}" {% if user == user_filter %}selected{% endif %}>{{ user }}</option>
+            {% endfor %}
+        </select>
+        <select name="limit" onchange="this.form.submit()">
+            <option value="50" {% if request.args.get('limit', '100') == '50' %}selected{% endif %}>50 records</option>
+            <option value="100" {% if request.args.get('limit', '100') == '100' %}selected{% endif %}>100 records</option>
+            <option value="200" {% if request.args.get('limit', '100') == '200' %}selected{% endif %}>200 records</option>
+            <option value="500" {% if request.args.get('limit', '100') == '500' %}selected{% endif %}>500 records</option>
+        </select>
+        {% if user_filter %}
+        <a href="{{ url_for('main.activity') }}" class="btn btn-secondary">Clear Filter</a>
+        {% endif %}
+    </form>
+</div>
+
+<div class="stats-bar">
+    <div class="stat">
+        <span class="stat-value">{{ records|length }}</span>
+        <span class="stat-label">Records</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value stat-enabled">{{ records|selectattr('Acct-Status-Type', 'equalto', 'Start')|list|length }}</span>
+        <span class="stat-label">Connections</span>
+    </div>
+    <div class="stat">
+        <span class="stat-value stat-disabled">{{ records|selectattr('Acct-Status-Type', 'equalto', 'Stop')|list|length }}</span>
+        <span class="stat-label">Disconnections</span>
+    </div>
+</div>
+
+<table class="users-table activity-table">
+    <thead>
+        <tr>
+            <th>Time</th>
+            <th>User</th>
+            <th>Status</th>
+            <th>IP Address</th>
+            <th>Calling Station</th>
+            <th>NAS</th>
+            <th>Duration</th>
+            <th>Data</th>
+        </tr>
+    </thead>
+    <tbody>
+        {% for record in records %}
+        <tr class="{% if record.get('Acct-Status-Type') == 'Start' %}row-start{% elif record.get('Acct-Status-Type') == 'Stop' %}row-stop{% endif %}">
+            <td class="timestamp">{{ record.get('_timestamp_str', '-') }}</td>
+            <td class="username">{{ record.get('User-Name', '-') }}</td>
+            <td>
+                {% set status = record.get('Acct-Status-Type', '') %}
+                <span class="status-badge {% if status == 'Start' %}status-enabled{% elif status == 'Stop' %}status-disabled{% else %}status-other{% endif %}">
+                    {{ status or '-' }}
+                </span>
+            </td>
+            <td>{{ record.get('Framed-IP-Address', '-') }}</td>
+            <td>{{ record.get('Calling-Station-Id', '-') }}</td>
+            <td class="nas">{{ record.get('NAS-Identifier', record.get('NAS-IP-Address', '-'))|truncate(30) }}</td>
+            <td>
+                {% if record.get('Acct-Session-Time') %}
+                    {% set secs = record.get('Acct-Session-Time')|int %}
+                    {% set hours = secs // 3600 %}
+                    {% set mins = (secs % 3600) // 60 %}
+                    {% set secs = secs % 60 %}
+                    {{ '%02d:%02d:%02d'|format(hours, mins, secs) }}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+            <td>
+                {% if record.get('Acct-Input-Octets') or record.get('Acct-Output-Octets') %}
+                    {% set input = (record.get('Acct-Input-Octets', '0')|int + record.get('Acct-Input-Gigawords', '0')|int * 4294967296) %}
+                    {% set output = (record.get('Acct-Output-Octets', '0')|int + record.get('Acct-Output-Gigawords', '0')|int * 4294967296) %}
+                    {% set total = input + output %}
+                    {% if total > 1073741824 %}
+                        {{ '%.2f GB'|format(total / 1073741824) }}
+                    {% elif total > 1048576 %}
+                        {{ '%.2f MB'|format(total / 1048576) }}
+                    {% elif total > 1024 %}
+                        {{ '%.2f KB'|format(total / 1024) }}
+                    {% else %}
+                        {{ total }} B
+                    {% endif %}
+                {% else %}
+                    -
+                {% endif %}
+            </td>
+        </tr>
+        {% else %}
+        <tr>
+            <td colspan="8" class="empty-state">No activity records found</td>
+        </tr>
+        {% endfor %}
+    </tbody>
+</table>
+{% endblock %}

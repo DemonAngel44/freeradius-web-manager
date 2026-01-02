@@ -2,8 +2,11 @@
 Flask routes for web views and API endpoints.
 """
 
-import subprocess
+import os
+import re
+from datetime import datetime
 from flask import Blueprint, render_template, request, redirect, url_for, session, flash, jsonify, current_app
+import requests_unixsocket
 from app.auth import (
     authenticate_radius, is_admin_user, login_required, get_current_user,
     is_setup_complete, mark_setup_complete, setup_required
@@ -302,6 +305,18 @@ def api_toggle_user(username):
     return jsonify({'error': 'User not found'}), 404
 
 
+def docker_api_request(method, endpoint, **kwargs):
+    """Make a request to Docker API via Unix socket."""
+    socket_path = '/var/run/docker.sock'
+    if not os.path.exists(socket_path):
+        raise FileNotFoundError("Docker socket not available")
+
+    session = requests_unixsocket.Session()
+    url = f"http+unix://%2Fvar%2Frun%2Fdocker.sock{endpoint}"
+    response = session.request(method, url, **kwargs)
+    return response
+
+
 @api_bp.route('/reload', methods=['POST'])
 @login_required
 def api_reload_radius():
@@ -309,25 +324,37 @@ def api_reload_radius():
     container_name = current_app.config['FREERADIUS_CONTAINER']
 
     try:
-        # Try to reload FreeRADIUS via docker exec
-        result = subprocess.run(
-            ['docker', 'exec', container_name, 'kill', '-HUP', '1'],
-            capture_output=True,
-            text=True,
-            timeout=10
+        # Send HUP signal to PID 1 in the container via Docker API
+        exec_create = docker_api_request(
+            'POST',
+            f'/containers/{container_name}/exec',
+            json={
+                'Cmd': ['kill', '-HUP', '1'],
+                'AttachStdout': True,
+                'AttachStderr': True
+            }
         )
 
-        if result.returncode == 0:
+        if exec_create.status_code != 201:
+            return jsonify({'error': 'Failed to create exec instance', 'details': exec_create.text}), 500
+
+        exec_id = exec_create.json()['Id']
+
+        # Start the exec instance
+        exec_start = docker_api_request(
+            'POST',
+            f'/exec/{exec_id}/start',
+            json={'Detach': False}
+        )
+
+        if exec_start.status_code == 200:
             current_app.logger.info(f"FreeRADIUS reloaded by {get_current_user()}")
             return jsonify({'message': 'FreeRADIUS configuration reloaded'})
         else:
-            current_app.logger.error(f"FreeRADIUS reload failed: {result.stderr}")
-            return jsonify({'error': 'Failed to reload FreeRADIUS', 'details': result.stderr}), 500
+            return jsonify({'error': 'Failed to reload FreeRADIUS', 'details': exec_start.text}), 500
 
-    except subprocess.TimeoutExpired:
-        return jsonify({'error': 'Reload command timed out'}), 500
     except FileNotFoundError:
-        return jsonify({'error': 'Docker not available'}), 500
+        return jsonify({'error': 'Docker socket not available'}), 500
     except Exception as e:
         current_app.logger.error(f"Reload error: {str(e)}")
         return jsonify({'error': str(e)}), 500
@@ -337,3 +364,130 @@ def api_reload_radius():
 def api_health():
     """Health check endpoint."""
     return jsonify({'status': 'healthy'})
+
+
+# ============== Activity Parsing ==============
+
+def parse_detail_record(lines):
+    """Parse a single detail record from FreeRADIUS accounting."""
+    record = {}
+    for line in lines:
+        line = line.strip()
+        if line and '=' in line:
+            key, value = line.split('=', 1)
+            key = key.strip()
+            value = value.strip().strip('"')
+            record[key] = value
+    return record
+
+
+def parse_detail_file(filepath):
+    """Parse a FreeRADIUS detail file and return list of records."""
+    records = []
+    if not os.path.exists(filepath):
+        return records
+
+    try:
+        with open(filepath, 'r') as f:
+            content = f.read()
+
+        # Split by timestamp lines (e.g., "Fri Jan  2 00:13:52 2026")
+        blocks = re.split(r'\n(?=[A-Z][a-z]{2} [A-Z][a-z]{2} +\d)', content)
+
+        for block in blocks:
+            if not block.strip():
+                continue
+
+            lines = block.strip().split('\n')
+            if len(lines) < 2:
+                continue
+
+            # First line is timestamp
+            timestamp_str = lines[0].strip()
+            try:
+                timestamp = datetime.strptime(timestamp_str, '%a %b %d %H:%M:%S %Y')
+            except ValueError:
+                timestamp = None
+
+            record = parse_detail_record(lines[1:])
+            if record:
+                record['_timestamp'] = timestamp
+                record['_timestamp_str'] = timestamp_str
+                records.append(record)
+
+    except Exception as e:
+        current_app.logger.error(f"Error parsing detail file: {e}")
+
+    return records
+
+
+def get_activity_records(log_dir, limit=100):
+    """Get activity records from FreeRADIUS accounting logs."""
+    all_records = []
+
+    if not os.path.exists(log_dir):
+        return all_records
+
+    # Find all detail files in radacct subdirectories
+    for nas_dir in os.listdir(log_dir):
+        nas_path = os.path.join(log_dir, nas_dir)
+        if os.path.isdir(nas_path):
+            for detail_file in sorted(os.listdir(nas_path), reverse=True):
+                if detail_file.startswith('detail'):
+                    filepath = os.path.join(nas_path, detail_file)
+                    records = parse_detail_file(filepath)
+                    all_records.extend(records)
+
+                    if len(all_records) >= limit * 2:
+                        break
+
+    # Sort by timestamp descending and limit
+    all_records.sort(key=lambda x: x.get('_timestamp') or datetime.min, reverse=True)
+    return all_records[:limit]
+
+
+# ============== Activity Views ==============
+
+@main_bp.route('/activity')
+@setup_required
+@login_required
+def activity():
+    """Activity log page."""
+    log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
+    limit = request.args.get('limit', 100, type=int)
+    user_filter = request.args.get('user', '').strip()
+
+    records = get_activity_records(log_dir, limit=limit * 2 if user_filter else limit)
+
+    # Filter by user if specified
+    if user_filter:
+        records = [r for r in records if user_filter.lower() in r.get('User-Name', '').lower()][:limit]
+
+    # Get unique users for filter dropdown
+    all_users = set(r.get('User-Name', '') for r in records if r.get('User-Name'))
+
+    return render_template('activity.html', records=records, users=sorted(all_users), user_filter=user_filter)
+
+
+@api_bp.route('/activity', methods=['GET'])
+@login_required
+def api_activity():
+    """Get activity records."""
+    log_dir = current_app.config.get('RADACCT_DIR', '/data/radacct')
+    limit = request.args.get('limit', 100, type=int)
+    user_filter = request.args.get('user', '').strip()
+
+    records = get_activity_records(log_dir, limit=limit * 2 if user_filter else limit)
+
+    if user_filter:
+        records = [r for r in records if user_filter.lower() in r.get('User-Name', '').lower()][:limit]
+
+    # Convert timestamps to strings for JSON
+    for record in records:
+        if record.get('_timestamp'):
+            record['_timestamp'] = record['_timestamp'].isoformat()
+
+    return jsonify({
+        'records': records,
+        'total': len(records)
+    })
