@@ -84,6 +84,36 @@
     </div>
 </div>
 
+<!-- Audit Log Section -->
+<div class="card mt-6">
+    <div class="card__header">
+        <h2 class="card__title">Audit Log</h2>
+        <div class="header-actions">
+            <select id="auditFilter" class="form-select" onchange="loadAuditLog()" style="min-width: 120px;">
+                <option value="">All Actions</option>
+                <option value="create">Create</option>
+                <option value="update">Update</option>
+                <option value="delete">Delete</option>
+                <option value="toggle">Toggle</option>
+            </select>
+            <button class="btn btn--ghost btn--sm" onclick="loadAuditLog()">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="23 4 23 10 17 10"/>
+                    <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/>
+                </svg>
+                Refresh
+            </button>
+        </div>
+    </div>
+    <div class="card__body">
+        <div class="audit-log" id="auditLogContainer">
+            <div class="empty-state-card">
+                <p>Loading audit log...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="settings-panel full-width mt-6">
     <h3>Environment Configuration</h3>
     <p class="settings-note">
@@ -228,8 +258,71 @@ async function testRadius() {
     setTimeout(() => { resultEl.textContent = ''; }, 5000);
 }
 
-// Check status on page load
+async function loadAuditLog() {
+    const container = document.getElementById('auditLogContainer');
+    const filter = document.getElementById('auditFilter').value;
+
+    try {
+        let url = '/api/audit?limit=50';
+        if (filter) {
+            url += '&action=' + encodeURIComponent(filter);
+        }
+
+        const response = await fetch(url);
+        const data = await response.json();
+
+        if (data.entries && data.entries.length > 0) {
+            container.innerHTML = data.entries.map(entry => {
+                const date = new Date(entry.timestamp);
+                const timeStr = date.toLocaleString();
+
+                let iconClass = 'update';
+                let iconSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>';
+
+                if (entry.action === 'create') {
+                    iconClass = 'create';
+                    iconSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>';
+                } else if (entry.action === 'delete') {
+                    iconClass = 'delete';
+                    iconSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+                } else if (entry.action === 'toggle') {
+                    iconClass = 'toggle';
+                    iconSvg = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="1" y="5" width="22" height="14" rx="7" ry="7"/><circle cx="16" cy="12" r="3"/></svg>';
+                }
+
+                let actionText = entry.action.charAt(0).toUpperCase() + entry.action.slice(1);
+                if (entry.action === 'toggle' && entry.details && entry.details.new_status) {
+                    actionText = entry.details.new_status.charAt(0).toUpperCase() + entry.details.new_status.slice(1);
+                }
+
+                return `
+                    <div class="audit-entry">
+                        <div class="audit-entry__icon audit-entry__icon--${iconClass}">
+                            ${iconSvg}
+                        </div>
+                        <div class="audit-entry__content">
+                            <div class="audit-entry__action">
+                                ${actionText} ${entry.target_type}
+                                <span class="audit-entry__target">${entry.target_name}</span>
+                            </div>
+                            <div class="audit-entry__meta">
+                                by <span class="audit-entry__user">${entry.user}</span> &bull; ${timeStr}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        } else {
+            container.innerHTML = '<div class="empty-state-card"><p>No audit log entries</p><span class="empty-hint">Actions will be recorded here as changes are made</span></div>';
+        }
+    } catch (err) {
+        container.innerHTML = '<div class="empty-state-card"><p>Failed to load audit log</p><span class="empty-hint">' + err.message + '</span></div>';
+    }
+}
+
+// Initialize
 refreshStatus();
+loadAuditLog();
 setInterval(refreshStatus, 30000);
 </script>
 {% endblock %}

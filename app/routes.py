@@ -14,6 +14,7 @@ from app.auth import (
 )
 from app.radius_file import RadiusFileManager, RadiusUser
 from app.radius_clients import RadiusClientsManager, RadiusClient
+from app.audit import log_action, get_audit_log
 
 main_bp = Blueprint('main', __name__)
 api_bp = Blueprint('api', __name__)
@@ -292,6 +293,7 @@ def api_create_user():
     )
 
     if manager.add_user(user, get_current_user()):
+        log_action('create', 'user', username, get_current_user(), {'comment': comment})
         return jsonify({'message': f'User {username} created', 'user': user.to_dict()}), 201
     return jsonify({'error': f'User {username} already exists'}), 409
 
@@ -320,6 +322,12 @@ def api_update_user(username):
         user.disabled = data['disabled']
 
     if manager.update_user(username, user, get_current_user()):
+        changes = []
+        if 'password' in data and data['password']:
+            changes.append('password')
+        if 'comment' in data:
+            changes.append('comment')
+        log_action('update', 'user', username, get_current_user(), {'changed': changes})
         return jsonify({'message': f'User {username} updated', 'user': user.to_dict()})
     return jsonify({'error': 'Failed to update user'}), 500
 
@@ -331,6 +339,7 @@ def api_delete_user(username):
     manager = get_file_manager()
 
     if manager.delete_user(username, get_current_user()):
+        log_action('delete', 'user', username, get_current_user())
         return jsonify({'message': f'User {username} deleted'})
     return jsonify({'error': 'User not found'}), 404
 
@@ -344,6 +353,7 @@ def api_toggle_user(username):
 
     if new_status is not None:
         status_text = 'disabled' if new_status else 'enabled'
+        log_action('toggle', 'user', username, get_current_user(), {'new_status': status_text})
         return jsonify({
             'message': f'User {username} {status_text}',
             'disabled': new_status
@@ -876,6 +886,7 @@ def api_create_client():
     )
 
     if manager.add_client(client, get_current_user()):
+        log_action('create', 'client', name, get_current_user(), {'ipaddr': ipaddr})
         return jsonify({'message': f'Client {name} created', 'client': client.to_dict()}), 201
     return jsonify({'error': f'Client {name} already exists'}), 409
 
@@ -907,6 +918,8 @@ def api_update_client(name):
         client.comment = data['comment']
 
     if manager.update_client(name, client, get_current_user()):
+        changes = [k for k in ['ipaddr', 'secret', 'shortname', 'nastype', 'comment'] if k in data]
+        log_action('update', 'client', name, get_current_user(), {'changed': changes})
         return jsonify({'message': f'Client {name} updated', 'client': client.to_dict()})
     return jsonify({'error': 'Failed to update client'}), 500
 
@@ -918,6 +931,7 @@ def api_delete_client(name):
     manager = get_clients_manager()
 
     if manager.delete_client(name, get_current_user()):
+        log_action('delete', 'client', name, get_current_user())
         return jsonify({'message': f'Client {name} deleted'})
     return jsonify({'error': 'Client not found'}), 404
 
@@ -1022,3 +1036,29 @@ def sse_events():
             'Connection': 'keep-alive'
         }
     )
+
+
+# ============== Audit Log API ==============
+
+@api_bp.route('/audit', methods=['GET'])
+@login_required
+def api_audit_log():
+    """Get audit log entries."""
+    limit = request.args.get('limit', 50, type=int)
+    offset = request.args.get('offset', 0, type=int)
+    target_type = request.args.get('type')
+    action = request.args.get('action')
+
+    entries = get_audit_log(
+        limit=min(limit, 200),  # Cap at 200
+        offset=offset,
+        target_type=target_type,
+        action=action
+    )
+
+    return jsonify({
+        'entries': entries,
+        'count': len(entries),
+        'limit': limit,
+        'offset': offset
+    })

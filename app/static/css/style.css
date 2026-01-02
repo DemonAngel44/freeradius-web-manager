@@ -1987,6 +1987,191 @@ input, select, textarea {
 }
 
 /* ============================================
+   Password Strength Indicator
+   ============================================ */
+.password-strength {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-top: var(--space-2);
+}
+
+.password-strength__bar {
+    flex: 1;
+    height: 4px;
+    background: var(--border-light);
+    border-radius: var(--radius-full);
+    overflow: hidden;
+}
+
+.password-strength__fill {
+    height: 100%;
+    width: 0;
+    border-radius: var(--radius-full);
+    transition: width 0.3s ease, background-color 0.3s ease;
+}
+
+.password-strength__fill--weak {
+    background: var(--danger);
+}
+
+.password-strength__fill--fair {
+    background: var(--warning);
+}
+
+.password-strength__fill--good {
+    background: #22c55e;
+}
+
+.password-strength__fill--strong {
+    background: var(--success);
+}
+
+.password-strength__text {
+    font-size: 0.75rem;
+    font-weight: 500;
+    min-width: 50px;
+}
+
+.password-strength__text--weak {
+    color: var(--danger);
+}
+
+.password-strength__text--fair {
+    color: var(--warning);
+}
+
+.password-strength__text--good {
+    color: #22c55e;
+}
+
+.password-strength__text--strong {
+    color: var(--success);
+}
+
+.password-requirements {
+    list-style: none;
+    padding: 0;
+    margin: var(--space-2) 0 0 0;
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    display: none;
+}
+
+.password-requirements.visible {
+    display: block;
+}
+
+.password-requirements li {
+    padding: var(--space-1) 0;
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.password-requirements .req-icon {
+    font-size: 0.625rem;
+    color: var(--text-tertiary);
+}
+
+.password-requirements li.req-met {
+    color: var(--success);
+}
+
+.password-requirements li.req-met .req-icon {
+    color: var(--success);
+}
+
+.password-match {
+    font-size: 0.75rem;
+    margin-top: var(--space-2);
+}
+
+.password-match--success {
+    color: var(--success);
+}
+
+.password-match--error {
+    color: var(--danger);
+}
+
+/* ============================================
+   Audit Log
+   ============================================ */
+.audit-log {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.audit-entry {
+    display: flex;
+    gap: var(--space-3);
+    padding: var(--space-3);
+    border-bottom: 1px solid var(--border-light);
+}
+
+.audit-entry:last-child {
+    border-bottom: none;
+}
+
+.audit-entry__icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.audit-entry__icon--create {
+    background: var(--success-light);
+    color: var(--success);
+}
+
+.audit-entry__icon--update {
+    background: var(--accent-light);
+    color: var(--accent);
+}
+
+.audit-entry__icon--delete {
+    background: rgba(239, 68, 68, 0.1);
+    color: var(--danger);
+}
+
+.audit-entry__icon--toggle {
+    background: rgba(245, 158, 11, 0.1);
+    color: var(--warning);
+}
+
+.audit-entry__content {
+    flex: 1;
+    min-width: 0;
+}
+
+.audit-entry__action {
+    font-weight: 500;
+    color: var(--text-primary);
+}
+
+.audit-entry__target {
+    font-family: var(--font-mono);
+    background: var(--bg-tertiary);
+    padding: 0 var(--space-1);
+    border-radius: var(--radius-sm);
+}
+
+.audit-entry__meta {
+    font-size: 0.75rem;
+    color: var(--text-tertiary);
+    margin-top: var(--space-1);
+}
+
+.audit-entry__user {
+    font-weight: 500;
+}
+
+/* ============================================
    Print styles
    ============================================ */
 @media print {

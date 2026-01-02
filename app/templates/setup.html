@@ -18,13 +18,29 @@
         <div class="form-group">
             <label for="password">Password</label>
             <input type="password" id="password" name="password" class="form-input" required
-                   placeholder="At least 8 characters" minlength="8">
+                   placeholder="At least 8 characters" minlength="8"
+                   oninput="checkPasswordStrength(this.value)">
+            <div class="password-strength" id="passwordStrength">
+                <div class="password-strength__bar">
+                    <div class="password-strength__fill" id="strengthFill"></div>
+                </div>
+                <span class="password-strength__text" id="strengthText"></span>
+            </div>
+            <ul class="password-requirements" id="passwordRequirements">
+                <li id="req-length"><span class="req-icon">○</span> At least 8 characters</li>
+                <li id="req-upper"><span class="req-icon">○</span> Uppercase letter</li>
+                <li id="req-lower"><span class="req-icon">○</span> Lowercase letter</li>
+                <li id="req-number"><span class="req-icon">○</span> Number</li>
+                <li id="req-special"><span class="req-icon">○</span> Special character</li>
+            </ul>
         </div>
 
         <div class="form-group">
             <label for="confirm_password">Confirm Password</label>
             <input type="password" id="confirm_password" name="confirm_password" class="form-input" required
-                   placeholder="Confirm your password" minlength="8">
+                   placeholder="Confirm your password" minlength="8"
+                   oninput="checkPasswordMatch()">
+            <div class="password-match" id="passwordMatch"></div>
         </div>
 
         <button type="submit" class="btn btn--primary btn--block">Create Admin Account</button>
@@ -36,4 +52,95 @@
         after setup is complete.
     </p>
 </div>
+
+<script>
+function checkPasswordStrength(password) {
+    const strengthFill = document.getElementById('strengthFill');
+    const strengthText = document.getElementById('strengthText');
+    const requirements = document.getElementById('passwordRequirements');
+
+    const checks = {
+        length: password.length >= 8,
+        upper: /[A-Z]/.test(password),
+        lower: /[a-z]/.test(password),
+        number: /[0-9]/.test(password),
+        special: /[^A-Za-z0-9]/.test(password)
+    };
+
+    Object.keys(checks).forEach(key => {
+        const el = document.getElementById('req-' + key);
+        const icon = el.querySelector('.req-icon');
+        if (checks[key]) {
+            el.classList.add('req-met');
+            icon.textContent = '●';
+        } else {
+            el.classList.remove('req-met');
+            icon.textContent = '○';
+        }
+    });
+
+    let score = 0;
+    if (checks.length) score++;
+    if (checks.upper) score++;
+    if (checks.lower) score++;
+    if (checks.number) score++;
+    if (checks.special) score++;
+    if (password.length >= 12) score++;
+    if (password.length >= 16) score++;
+
+    if (password.length === 0) {
+        requirements.classList.remove('visible');
+        strengthFill.style.width = '0';
+        strengthText.textContent = '';
+        strengthFill.className = 'password-strength__fill';
+        return;
+    }
+
+    requirements.classList.add('visible');
+
+    const percentage = Math.min((score / 7) * 100, 100);
+    strengthFill.style.width = percentage + '%';
+
+    let level, text;
+    if (score <= 2) {
+        level = 'weak';
+        text = 'Weak';
+    } else if (score <= 4) {
+        level = 'fair';
+        text = 'Fair';
+    } else if (score <= 5) {
+        level = 'good';
+        text = 'Good';
+    } else {
+        level = 'strong';
+        text = 'Strong';
+    }
+
+    strengthFill.className = 'password-strength__fill password-strength__fill--' + level;
+    strengthText.textContent = text;
+    strengthText.className = 'password-strength__text password-strength__text--' + level;
+
+    checkPasswordMatch();
+}
+
+function checkPasswordMatch() {
+    const password = document.getElementById('password').value;
+    const confirm = document.getElementById('confirm_password').value;
+    const matchEl = document.getElementById('passwordMatch');
+
+    if (confirm.length === 0) {
+        matchEl.textContent = '';
+        matchEl.className = 'password-match';
+        return;
+    }
+
+    if (password === confirm) {
+        matchEl.textContent = 'Passwords match';
+        matchEl.className = 'password-match password-match--success';
+    } else {
+        matchEl.textContent = 'Passwords do not match';
+        matchEl.className = 'password-match password-match--error';
+    }
+}
+</script>
 {% endblock %}
