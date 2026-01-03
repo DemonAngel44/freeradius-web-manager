@@ -136,14 +136,18 @@ class RadiusFileManager:
 
             # Check for user definition line
             # Format: username Cleartext-Password := "password"
+            # Handle escaped characters in password (\" and \\)
             user_match = re.match(
-                r'^(\S+)\s+Cleartext-Password\s*:=\s*"([^"]*)"',
+                r'^(\S+)\s+Cleartext-Password\s*:=\s*"((?:[^"\\]|\\.)*)"',
                 line_stripped
             )
             if user_match:
+                # Unescape the password (reverse of _escape_password)
+                raw_password = user_match.group(2)
+                password = raw_password.replace('\\"', '"').replace('\\\\', '\\')
                 current_user = {
                     'username': user_match.group(1),
-                    'password': user_match.group(2),
+                    'password': password,
                     'disabled': False
                 }
                 continue
@@ -177,6 +181,16 @@ class RadiusFileManager:
                 return user
         return None
 
+    def _escape_password(self, password: str) -> str:
+        """Escape special characters in password for FreeRADIUS config file.
+
+        FreeRADIUS uses double-quoted strings where backslash and double-quote
+        need to be escaped.
+        """
+        # Escape backslashes first, then double quotes
+        escaped = password.replace('\\', '\\\\').replace('"', '\\"')
+        return escaped
+
     def _format_user_entry(self, user: RadiusUser) -> str:
         """Format a user entry for the users file."""
         import base64
@@ -190,7 +204,8 @@ class RadiusFileManager:
         else:
             if user.comment:
                 lines.append(f"# {user.comment}")
-            lines.append(f'{user.username} Cleartext-Password := "{user.password}"')
+            escaped_password = self._escape_password(user.password)
+            lines.append(f'{user.username} Cleartext-Password := "{escaped_password}"')
 
             # Add attributes
             attributes = user.attributes if user.attributes else self.DEFAULT_ATTRIBUTES
