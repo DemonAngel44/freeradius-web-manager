@@ -155,10 +155,11 @@ class RadiusFileManager:
             # Check for attribute line (indented)
             if line.startswith((' ', '\t')) and current_user:
                 # Parse attribute: Name = Value or Name = Value,
-                attr_match = re.match(r'^\s*(\S+)\s*=\s*(\S+),?\s*$', line_stripped)
+                attr_match = re.match(r'^\s*(\S+)\s*=\s*(\S+?),?\s*$', line_stripped)
                 if attr_match:
                     attr_name = attr_match.group(1)
-                    attr_value = attr_match.group(2)
+                    # Strip any trailing commas from value to prevent comma accumulation
+                    attr_value = attr_match.group(2).rstrip(',')
                     current_attributes[attr_name] = attr_value
 
         # Don't forget the last user if file doesn't end with blank line
